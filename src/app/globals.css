@@ -1,0 +1,188 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@import "katex/dist/katex.min.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Cozy Linen Parchment & Terracotta Dust (Default Light Mode) */
+:root {
+  --background: #F5F2EB;       /* Soft Linen Oat Desk Canvas */
+  --foreground: #2D2926;       /* Deep Espresso Charcoal Ink */
+  --surface: #FAF8F5;          /* Warm Cream Paper Sheet */
+  --surface-hover: #EFEBE3;
+  --muted: #757069;            /* Muted Stone */
+  --muted-light: #EBE6DC;
+  --border: #E8E3D9;           /* Fine Wheat Hairline */
+  --border-strong: #D5CEBF;
+  
+  --primary: #A85D44;          /* Faded Terracotta / Clay */
+  --primary-hover: #8F4C35;
+  --primary-foreground: #FFFFFF;
+
+  --accent-sage: #5D7063;      /* Muted Olive Sage */
+  
+  --diff-add-bg: #EBF5F0;
+  --diff-add-text: #2D5A43;
+  --diff-add-border: #C6E2D2;
+  
+  --diff-del-bg: #FAF0F0;
+  --diff-del-text: #8A3A3A;
+  --diff-del-border: #ECCACA;
+  
+  --diff-pending-bg: #FAF4EC;
+  --diff-pending-text: #7A5A38;
+  --diff-pending-border: #EAD9C2;
+
+  --callout-bg: #F7F4EB;
+  --callout-border: #E8E3D9;
+}
+
+/* Cozy Peat & Wheat (Dark Mode) */
+.dark {
+  --background: #181716;       /* Deep Peat */
+  --foreground: #E3DFD7;       /* Soft Wheat Ink */
+  --surface: #21201E;          /* Elevated Charcoal Card */
+  --surface-hover: #292825;
+  --muted: #948F86;
+  --muted-light: #2B2A27;
+  --border: #33312E;
+  --border-strong: #45423E;
+  
+  --primary: #C4785E;          /* Muted Terracotta */
+  --primary-hover: #A85D44;
+  --primary-foreground: #181716;
+
+  --accent-sage: #768D7D;
+  
+  --diff-add-bg: rgba(45, 90, 67, 0.25);
+  --diff-add-text: #86BBA0;
+  --diff-add-border: #2D5A43;
+  
+  --diff-del-bg: rgba(138, 58, 58, 0.25);
+  --diff-del-text: #E59898;
+  --diff-del-border: #8A3A3A;
+  
+  --diff-pending-bg: rgba(122, 90, 56, 0.25);
+  --diff-pending-text: #DDB88C;
+  --diff-pending-border: #7A5A38;
+
+  --callout-bg: #22201D;
+  --callout-border: #383530;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* Generous reading measure and line height */
+.note-prose {
+  line-height: 1.75;
+  color: var(--foreground);
+}
+
+.note-prose p {
+  margin-bottom: 1.25rem;
+}
+
+code, pre {
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* TipTap & ProseMirror Typography Styles */
+.tiptap {
+  outline: none;
+}
+
+.tiptap h1 {
+  font-size: 2rem !important; /* 32px */
+  line-height: 1.25 !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.025em !important;
+  margin-top: 1.75rem !important;
+  margin-bottom: 0.75rem !important;
+  color: var(--foreground) !important;
+}
+
+.tiptap h2 {
+  font-size: 1.5rem !important; /* 24px */
+  line-height: 1.35 !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.02em !important;
+  margin-top: 1.5rem !important;
+  margin-bottom: 0.5rem !important;
+  color: var(--foreground) !important;
+}
+
+.tiptap h3 {
+  font-size: 1.25rem !important; /* 20px */
+  line-height: 1.4 !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.015em !important;
+  margin-top: 1.25rem !important;
+  margin-bottom: 0.5rem !important;
+  color: var(--foreground) !important;
+}
+
+.tiptap p {
+  margin-top: 0.5rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.7;
+}
+
+.tiptap ul {
+  list-style-type: disc !important;
+  padding-left: 1.5rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
+.tiptap ol {
+  list-style-type: decimal !important;
+  padding-left: 1.5rem !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.75rem !important;
+}
+
+.tiptap li {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.tiptap blockquote {
+  border-left: 3px solid var(--primary) !important;
+  padding-left: 1rem !important;
+  margin-top: 1rem !important;
+  margin-bottom: 1rem !important;
+  font-style: italic !important;
+  color: var(--muted) !important;
+}
+
+.tiptap hr {
+  border: none !important;
+  border-top: 1px solid var(--border) !important;
+  margin: 2rem 0 !important;
+}
+
+.tiptap img {
+  border-radius: 1rem;
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.08);
+  margin: 1.5rem auto;
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* TipTap Placeholders for empty nodes */
+.tiptap p.is-editor-empty:first-child::before,
+.tiptap .is-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--muted);
+  opacity: 0.45;
+  pointer-events: none;
+  height: 0;
+}
