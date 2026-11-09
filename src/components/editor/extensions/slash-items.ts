@@ -126,9 +126,10 @@ export const getSlashCommands = (): SlashItem[] => [
   },
   {
     title: "Code Block",
-    description: "Code snippet with monospace styling",
+    description: "Notion-style code snippet with language selection",
     icon: "</>",
     category: "Technical",
+    aliases: ["code", "codeblock", "snippet", "python", "js", "ts", "terminal"],
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run();
     },

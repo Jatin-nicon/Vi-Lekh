@@ -105,11 +105,16 @@ export function htmlToBlocks(html: string): NoteBlock[] {
       });
     } else if (tagName === "pre") {
       const code = el.querySelector("code");
+      const className = code?.className || el.className || "";
+      const match = className.match(/language-([a-zA-Z0-9#+-]+)/);
+      const language = match
+        ? match[1]
+        : (code?.getAttribute("data-language") || el.getAttribute("data-language") || "python");
       blocks.push({
         id,
         type: "code",
         content: (code ? code.textContent : el.textContent) || "",
-        props: { language: "python" },
+        props: { language },
       });
     } else if (tagName === "ul") {
       const items = Array.from(el.querySelectorAll("li"));

@@ -3,6 +3,7 @@
 import React, { useMemo } from "react";
 import { htmlToBlocks } from "@/lib/editor/block-converter";
 import { MathRenderer } from "./math-renderer";
+import { NotionCodeBlock } from "@/components/ui/notion-code-block";
 import { Sparkles, Code, CheckCircle2 } from "lucide-react";
 
 interface LivePreviewProps {
@@ -108,20 +109,11 @@ export function LivePreview({ html, noteTitle }: LivePreviewProps) {
 
             if (block.type === "code") {
               return (
-                <div
+                <NotionCodeBlock
                   key={block.id}
-                  className="my-5 rounded-xl border border-[#3A3632] bg-[#252321] text-[#E8DCC4] overflow-hidden shadow-sm"
-                >
-                  <div className="flex items-center justify-between px-4 py-1.5 bg-[#1E1C1A] text-xs text-[#9E9689] border-b border-[#3A3632]">
-                    <span className="flex items-center gap-1.5 font-mono text-[11px]">
-                      <Code className="w-3 h-3 text-[#C4785E]" />
-                      Python
-                    </span>
-                  </div>
-                  <pre className="p-4 font-mono text-xs leading-relaxed overflow-x-auto text-[#D4C3A3]">
-                    <code>{block.content}</code>
-                  </pre>
-                </div>
+                  code={block.content}
+                  language={(block.props?.language as string) || "python"}
+                />
               );
             }
 

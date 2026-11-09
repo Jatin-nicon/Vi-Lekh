@@ -11,6 +11,7 @@ import { Image as ImageIcon, Loader2 } from "lucide-react";
 
 import { uploadImage } from "@/lib/services/image-upload";
 import { Callout } from "./extensions/callout";
+import { NotionCodeBlockExtension } from "./extensions/notion-code-block";
 import { SlashCommand } from "./extensions/slash-command";
 import { EditorBubbleMenu } from "./bubble-menu";
 
@@ -51,13 +52,9 @@ export function RichEditor({
         heading: {
           levels: [1, 2, 3],
         },
-        codeBlock: {
-          HTMLAttributes: {
-            class:
-              "rounded-xl border border-[#3A3632] bg-[#252321] p-4 font-mono text-xs text-[#E8DCC4] my-5 overflow-x-auto shadow-sm",
-          },
-        },
+        codeBlock: false,
       }),
+      NotionCodeBlockExtension,
       Placeholder.configure({
         placeholder: ({ node }) => {
           if (node.type.name === "heading") {

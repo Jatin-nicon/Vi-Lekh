@@ -3,6 +3,7 @@
 import React from "react";
 import type { Note, Revision, Profile } from "@/lib/supabase/types";
 import { MathRenderer } from "@/components/editor/math-renderer";
+import { NotionCodeBlock } from "@/components/ui/notion-code-block";
 import { 
   Sparkles, 
   Code, 
@@ -166,20 +167,11 @@ export function NoteReader({
 
             if (block.type === "code") {
               return (
-                <div
+                <NotionCodeBlock
                   key={block.id}
-                  className="my-6 rounded-xl border border-[#3A3632] bg-[#252321] text-[#E8DCC4] overflow-hidden shadow-sm"
-                >
-                  <div className="flex items-center justify-between px-4 py-2 bg-[#1E1C1A] text-xs text-[#9E9689] border-b border-[#3A3632]">
-                    <span className="flex items-center gap-1.5 font-mono text-[11px]">
-                      <Code className="w-3.5 h-3.5 text-[#C4785E]" />
-                      {block.props?.language || "python"}
-                    </span>
-                  </div>
-                  <pre className="p-4 font-mono text-xs sm:text-sm leading-relaxed overflow-x-auto text-[#D4C3A3]">
-                    <code>{block.content}</code>
-                  </pre>
-                </div>
+                  code={block.content}
+                  language={(block.props?.language as string) || "python"}
+                />
               );
             }
 
