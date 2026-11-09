@@ -118,7 +118,7 @@ function EditContent() {
 
       if (canDirectPublish) {
         alert("Published immediately! The live note has been updated.");
-        router.push(`/?course=${note.course_id}`);
+        router.push(`/notes?course=${note.course_id}`);
       } else {
         alert("Revision proposal submitted! Placed in the review queue for course maintainers.");
         router.push("/reviews");
@@ -145,11 +145,11 @@ function EditContent() {
         <h2 className="text-lg font-bold mb-2">No note selected for editing</h2>
         <p className="text-xs text-[#757069] mb-4">Please select a note from the syllabus to propose changes.</p>
         <Link
-          href="/"
+          href={note?.course_id ? `/notes?course=${note.course_id}` : "/notes"}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#A85D44] text-white text-xs font-semibold"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Return to Curriculum</span>
+          <span>Return to Notes</span>
         </Link>
       </div>
     );
@@ -162,8 +162,9 @@ function EditContent() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
-              href="/"
+              href={`/notes?course=${note.course_id}`}
               className="p-1.5 rounded-lg hover:bg-[#EFEBE3] dark:hover:bg-[#292825] text-[#757069] dark:text-[#948F86] transition-colors"
+              title="Return to notes"
             >
               <ArrowLeft className="w-5 h-5" />
             </Link>

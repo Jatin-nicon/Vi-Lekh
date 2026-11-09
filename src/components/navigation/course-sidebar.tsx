@@ -183,7 +183,7 @@ export function CourseSidebar({
                 ))}
                 <div className="pt-1 mt-1 border-t border-[#E8E3D9] dark:border-[#33312E]">
                   <Link
-                    href="/courses"
+                    href="/"
                     onClick={() => setIsCourseDropdownOpen(false)}
                     className="w-full flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs text-[#A85D44] dark:text-[#C4785E] hover:bg-[#EFEBE3] dark:hover:bg-[#292825] font-semibold transition-colors"
                   >

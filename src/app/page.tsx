@@ -1,162 +1,72 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, Suspense } from "react";
+import React, { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { notesService } from "@/lib/data/notes-service";
 import { useAuth, AuthProvider } from "@/lib/auth/auth-context";
-import { CourseSidebar } from "@/components/navigation/course-sidebar";
-import { NoteReader } from "@/components/reader/note-reader";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/auth/user-menu";
 import { CreateCourseModal } from "@/components/modals/create-course-modal";
-import { CreateNoteModal } from "@/components/modals/create-note-modal";
-import { CreateModuleModal } from "@/components/modals/create-module-modal";
 import { CourseAccessModal } from "@/components/modals/course-access-modal";
 import { extractErrorMessage } from "@/lib/utils";
-import type { Course, Module, Note, Revision } from "@/lib/supabase/types";
+import type { Course, CourseWithStats } from "@/lib/supabase/types";
 import { 
+  BookOpen, 
   GitPullRequest, 
-  BookOpen,
-  Plus,
-  Loader2,
-  Sparkles
+  Plus, 
+  Search, 
+  Loader2, 
+  ShieldCheck, 
+  Crown, 
+  FileText, 
+  Layers, 
+  Users, 
+  ArrowRight,
+  Trash2,
+  Sparkles,
+  CheckCircle2,
+  Lock,
+  Globe
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 
-function MainContent() {
+function CoursesContent() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const courseParam = searchParams.get("course");
   const { user, isSuperAdmin } = useAuth();
 
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
-  const [modules, setModules] = useState<Module[]>([]);
-  const [notes, setNotes] = useState<Note[]>([]);
-  const [activeNote, setActiveNote] = useState<Note | null>(null);
-  const [activeRevision, setActiveRevision] = useState<Revision | null>(null);
-  const [pendingCount, setPendingCount] = useState<number>(0);
-
+  const [courses, setCourses] = useState<CourseWithStats[]>([]);
   const [loading, setLoading] = useState(true);
-  const [noteLoading, setNoteLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState<"all" | "mine" | "editor">("all");
+  const [pendingCount, setPendingCount] = useState<number>(0);
 
   // Modals state
   const [isCreateCourseOpen, setIsCreateCourseOpen] = useState(false);
-  const [isCreateNoteOpen, setIsCreateNoteOpen] = useState(false);
-  const [isCreateModuleOpen, setIsCreateModuleOpen] = useState(false);
-  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
+  const [selectedAccessCourse, setSelectedAccessCourse] = useState<Course | null>(null);
 
-  const [courseRole, setCourseRole] = useState<string>("viewer");
-
-  // 1. Initial Load of Courses & Pending Revisions
-  const loadInitialData = useCallback(async () => {
+  const loadCoursesData = useCallback(async () => {
     try {
       setLoading(true);
-      const [coursesList, pendingRevs] = await Promise.all([
-        notesService.getCourses(),
+      const [coursesWithStats, pendingRevs] = await Promise.all([
+        notesService.getCoursesWithDetails(),
         notesService.getPendingRevisions().catch(() => []),
       ]);
-
-      setCourses(coursesList);
+      setCourses(coursesWithStats);
       setPendingCount(pendingRevs.length);
-
-      if (coursesList.length > 0) {
-        const found = courseParam 
-          ? coursesList.find((c) => c.id === courseParam || c.slug === courseParam)
-          : null;
-        setSelectedCourse(found || coursesList[0]);
-      } else {
-        setSelectedCourse(null);
-        setModules([]);
-        setNotes([]);
-        setActiveNote(null);
-        setActiveRevision(null);
-      }
     } catch (err) {
       console.error("Error loading courses:", err);
     } finally {
       setLoading(false);
     }
-  }, [courseParam]);
-
-  // Keep selected course synchronized if query param changes externally
-  useEffect(() => {
-    if (courseParam && courses.length > 0) {
-      const match = courses.find((c) => c.id === courseParam || c.slug === courseParam);
-      if (match && match.id !== selectedCourse?.id) {
-        setSelectedCourse(match);
-      }
-    }
-  }, [courseParam, courses, selectedCourse?.id]);
-
-  useEffect(() => {
-    loadInitialData();
-  }, [loadInitialData]);
-
-  // 2. Load Modules and Notes when Selected Course Changes
-  const loadCourseData = useCallback(async (course: Course) => {
-    try {
-      const [{ modules: m, notes: n }, role] = await Promise.all([
-        notesService.getCourseWithModulesAndNotes(course.id),
-        notesService.getUserCourseRole(course.id, course.created_by).catch(() => "viewer"),
-      ]);
-      setModules(m);
-      setNotes(n);
-      setCourseRole(role);
-
-      if (n.length > 0) {
-        // Select first note
-        loadNoteData(n[0].id);
-      } else {
-        setActiveNote(null);
-        setActiveRevision(null);
-      }
-    } catch (err) {
-      console.error("Error loading course data:", err);
-    }
   }, []);
 
   useEffect(() => {
-    if (selectedCourse) {
-      loadCourseData(selectedCourse);
-    }
-  }, [selectedCourse, loadCourseData]);
-
-  useEffect(() => {
-    if (selectedCourse) {
-      notesService
-        .getUserCourseRole(selectedCourse.id, selectedCourse.created_by)
-        .then(setCourseRole)
-        .catch(() => setCourseRole("viewer"));
-    }
-  }, [selectedCourse, user]);
-
-  // 3. Load Active Note and its Active Revision
-  const loadNoteData = async (noteId: string) => {
-    try {
-      setNoteLoading(true);
-      const { note, currentRevision } = await notesService.getNote(noteId);
-      setActiveNote(note);
-      setActiveRevision(currentRevision);
-    } catch (err) {
-      console.error("Error loading note:", err);
-    } finally {
-      setNoteLoading(false);
-    }
-  };
+    loadCoursesData();
+  }, [loadCoursesData]);
 
   const handleCourseCreated = (newCourse: Course) => {
-    setCourses((prev) => [...prev, newCourse]);
-    setSelectedCourse(newCourse);
-  };
-
-  const handleNoteCreated = (newNote: Note) => {
-    setNotes((prev) => [...prev, newNote]);
-    loadNoteData(newNote.id);
-  };
-
-  const handleModuleCreated = (newMod: Module) => {
-    setModules((prev) => [...prev, newMod]);
+    loadCoursesData();
+    setIsCreateCourseOpen(false);
   };
 
   const handleDeleteCourse = async (course: Course) => {
@@ -169,85 +79,40 @@ function MainContent() {
     }
 
     try {
-      setLoading(true);
       await notesService.deleteCourse(course.id);
-      const remaining = courses.filter((c) => c.id !== course.id);
-      setCourses(remaining);
-      if (remaining.length > 0) {
-        setSelectedCourse(remaining[0]);
-      } else {
-        setSelectedCourse(null);
-        setModules([]);
-        setNotes([]);
-        setActiveNote(null);
-        setActiveRevision(null);
-      }
-    } catch (err) {
-      alert(extractErrorMessage(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleUpdateModule = async (mod: Module, newTitle: string) => {
-    try {
-      const updated = await notesService.updateModule(mod.id, { title: newTitle });
-      setModules((prev) => prev.map((m) => (m.id === mod.id ? updated : m)));
-    } catch (err: unknown) {
-      alert(extractErrorMessage(err));
-    }
-  };
-
-  const handleUpdateNote = async (note: Note, newTitle: string) => {
-    try {
-      const updated = await notesService.updateNote(note.id, { title: newTitle });
-      setNotes((prev) => prev.map((n) => (n.id === note.id ? updated : n)));
-      if (activeNote?.id === note.id) {
-        setActiveNote(updated);
-      }
-    } catch (err: unknown) {
-      alert(extractErrorMessage(err));
-    }
-  };
-
-  const handleDeleteModule = async (mod: Module) => {
-    if (
-      !confirm(
-        `Are you sure you want to delete module "${mod.title}"?\n\nNotes belonging to this module will be unassigned.`
-      )
-    ) {
-      return;
-    }
-
-    try {
-      await notesService.deleteModule(mod.id);
-      setModules((prev) => prev.filter((m) => m.id !== mod.id));
+      setCourses((prev) => prev.filter((c) => c.id !== course.id));
     } catch (err) {
       alert(extractErrorMessage(err));
     }
   };
 
-  const handleDeleteNote = async (note: Note) => {
-    if (!confirm(`Are you sure you want to delete note "${note.title}"?`)) {
-      return;
-    }
+  // Filter courses based on search and user affiliation
+  const filteredCourses = useMemo(() => {
+    return courses.filter((c) => {
+      // 1. Text search
+      const q = searchQuery.toLowerCase().trim();
+      const matchText =
+        !q ||
+        c.title.toLowerCase().includes(q) ||
+        (c.description || "").toLowerCase().includes(q) ||
+        (c.domain || "").toLowerCase().includes(q) ||
+        (c.slug || "").toLowerCase().includes(q);
 
-    try {
-      await notesService.deleteNote(note.id);
-      const remaining = notes.filter((n) => n.id !== note.id);
-      setNotes(remaining);
-      if (activeNote?.id === note.id) {
-        if (remaining.length > 0) {
-          loadNoteData(remaining[0].id);
-        } else {
-          setActiveNote(null);
-          setActiveRevision(null);
-        }
+      if (!matchText) return false;
+
+      // 2. Filter tabs
+      if (activeFilter === "mine") {
+        return c.created_by === user?.uid || isSuperAdmin;
       }
-    } catch (err) {
-      alert(extractErrorMessage(err));
-    }
-  };
+      if (activeFilter === "editor") {
+        if (isSuperAdmin || c.created_by === user?.uid) return true;
+        const membership = c.members.find((m) => m.user_id === user?.uid);
+        return membership?.role === "admin" || membership?.role === "editor";
+      }
+
+      return true;
+    });
+  }, [courses, searchQuery, activeFilter, user, isSuperAdmin]);
 
   return (
     <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] flex flex-col font-sans transition-colors">
@@ -265,18 +130,26 @@ function MainContent() {
               </span>
             </Link>
             <span className="hidden sm:inline-block text-[11px] px-2 py-0.5 rounded bg-[#EBE6DC] dark:bg-[#2B2A27] text-[#757069] dark:text-[#948F86] font-medium">
-              Academic Notes & Wiki
+              Academic Curriculums
             </span>
           </div>
 
-          {/* Right Action Controls */}
+          {/* Navigation Controls */}
           <div className="flex items-center gap-2 sm:gap-3">
             <Link
-              href="/courses"
-              className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors"
+              href="/"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#A85D44]/15 border border-[#A85D44]/30 text-[#A85D44] dark:text-[#C4785E] text-xs font-semibold shadow-xs"
             >
-              <BookOpen className="w-3.5 h-3.5 text-[#A85D44] dark:text-[#C4785E]" />
-              <span>All Courses</span>
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>Courses</span>
+            </Link>
+
+            <Link
+              href="/notes"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] dark:hover:bg-[#292825] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors"
+            >
+              <FileText className="w-3.5 h-3.5 text-[#757069]" />
+              <span>Notes Reader</span>
             </Link>
 
             <Link
@@ -300,131 +173,253 @@ function MainContent() {
         </div>
       </header>
 
-      {/* Main Layout */}
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center p-12 text-[#757069]">
-          <Loader2 className="w-6 h-6 animate-spin text-[#A85D44] mr-2" />
-          <span className="text-sm">Connecting to database...</span>
-        </div>
-      ) : (
-        <div className="flex-1 max-w-7xl mx-auto w-full flex flex-col md:flex-row">
-          {/* Course Syllabus Sidebar */}
-          <CourseSidebar
-            courses={courses}
-            selectedCourse={selectedCourse}
-            onSelectCourse={(c) => setSelectedCourse(c)}
-            modules={modules}
-            notes={notes}
-            activeNoteId={activeNote?.id}
-            onSelectNote={(n) => loadNoteData(n.id)}
-            onAddCourse={() => setIsCreateCourseOpen(true)}
-            onDeleteCourse={handleDeleteCourse}
-            onAddNote={() => setIsCreateNoteOpen(true)}
-            onAddModule={() => setIsCreateModuleOpen(true)}
-            onUpdateModule={handleUpdateModule}
-            onDeleteModule={handleDeleteModule}
-            onUpdateNote={handleUpdateNote}
-            onDeleteNote={handleDeleteNote}
-            pendingCount={pendingCount}
-            canManageAccess={Boolean(
-              isSuperAdmin ||
-              (selectedCourse && (selectedCourse.created_by === user?.uid || courseRole === "admin" || courseRole === "editor"))
-            )}
-            onManageAccess={() => setIsAccessModalOpen(true)}
-          />
+      {/* Main Container */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-8 sm:py-10 space-y-8">
+        {/* Hero Section */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-6 border-b border-[#E8E3D9] dark:border-[#33312E]">
+          <div>
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#A85D44]/10 text-[#A85D44] dark:text-[#C4785E] text-xs font-semibold mb-3">
+              <Globe className="w-3.5 h-3.5" />
+              <span>Open Collaborative Learning</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-[#2D2926] dark:text-[#E3DFD7]">
+              Course Directory & Syllabi
+            </h1>
+            <p className="text-xs sm:text-sm text-[#757069] dark:text-[#948F86] mt-1.5 max-w-2xl leading-relaxed">
+              Explore academic courses, read structured lecture notes, suggest improvements, or grant permanent editing privileges to collaborators.
+            </p>
+          </div>
 
-          {/* Note Reader Body */}
-          <main className="flex-1 min-w-0 bg-[#F5F2EB] dark:bg-[#181716] overflow-y-auto p-4 sm:p-6">
-            {noteLoading ? (
-              <div className="py-24 text-center text-xs text-[#757069]">
-                <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-[#A85D44]" />
-                Loading technical note...
-              </div>
-            ) : activeNote ? (
-              <NoteReader
-                note={activeNote}
-                revision={activeRevision}
-                courseTitle={selectedCourse?.title || "Curriculum"}
-                onProposeEdit={() => router.push(`/edit?note=${activeNote.id}`)}
-              />
-            ) : selectedCourse ? (
-              /* Course exists, but no notes created yet */
-              <div className="max-w-2xl mx-auto my-12 p-8 sm:p-12 text-center bg-[#FAF8F5] dark:bg-[#21201E] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] shadow-sm">
-                <BookOpen className="w-10 h-10 text-[#A85D44] mx-auto mb-3" />
-                <h3 className="text-lg font-bold text-[#2D2926] dark:text-[#E3DFD7] mb-1">
-                  {selectedCourse.title}
-                </h3>
-                <p className="text-xs text-[#757069] dark:text-[#948F86] mb-6 max-w-md mx-auto">
-                  {selectedCourse.description}
-                </p>
+          <button
+            type="button"
+            onClick={() => setIsCreateCourseOpen(true)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[#A85D44] hover:bg-[#8F4C35] text-white text-xs sm:text-sm font-semibold shadow-sm transition-all shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create New Course</span>
+          </button>
+        </div>
+
+        {/* Search & Filter Controls */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          {/* Search Bar */}
+          <div className="relative w-full sm:w-80">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#757069] pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search courses, topics, codes..."
+              className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] text-[#2D2926] dark:text-[#E3DFD7] placeholder:text-[#757069] outline-none focus:border-[#A85D44] transition-colors"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#757069] hover:text-[#2D2926]"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center gap-1.5 self-start sm:self-auto bg-[#FAF8F5] dark:bg-[#21201E] p-1 rounded-xl border border-[#E8E3D9] dark:border-[#33312E] text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveFilter("all")}
+              className={`px-3 py-1 rounded-lg transition-colors font-medium ${
+                activeFilter === "all"
+                  ? "bg-[#A85D44] text-white shadow-xs font-semibold"
+                  : "text-[#757069] dark:text-[#948F86] hover:text-[#2D2926]"
+              }`}
+            >
+              All Courses ({courses.length})
+            </button>
+            {user && (
+              <>
                 <button
                   type="button"
-                  onClick={() => setIsCreateNoteOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] text-white text-xs font-semibold shadow-sm transition-colors"
+                  onClick={() => setActiveFilter("mine")}
+                  className={`px-3 py-1 rounded-lg transition-colors font-medium ${
+                    activeFilter === "mine"
+                      ? "bg-[#A85D44] text-white shadow-xs font-semibold"
+                      : "text-[#757069] dark:text-[#948F86] hover:text-[#2D2926]"
+                  }`}
                 >
-                  <Plus className="w-4 h-4" />
-                  <span>Create First Technical Note</span>
+                  My Courses
                 </button>
-              </div>
-            ) : (
-              /* Empty Database: No courses yet */
-              <div className="max-w-2xl mx-auto my-12 p-8 sm:p-12 text-center bg-[#FAF8F5] dark:bg-[#21201E] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] shadow-sm">
-                <div className="w-12 h-12 rounded-xl bg-[#A85D44]/10 text-[#A85D44] flex items-center justify-center mx-auto mb-4">
-                  <Sparkles className="w-6 h-6" />
+                <button
+                  type="button"
+                  onClick={() => setActiveFilter("editor")}
+                  className={`px-3 py-1 rounded-lg transition-colors font-medium ${
+                    activeFilter === "editor"
+                      ? "bg-[#A85D44] text-white shadow-xs font-semibold"
+                      : "text-[#757069] dark:text-[#948F86] hover:text-[#2D2926]"
+                  }`}
+                >
+                  Permanent Editor
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Courses Grid */}
+        {loading ? (
+          <div className="py-24 text-center text-xs text-[#757069]">
+            <Loader2 className="w-6 h-6 animate-spin text-[#A85D44] mx-auto mb-2" />
+            <span>Loading academic courses catalog...</span>
+          </div>
+        ) : filteredCourses.length === 0 ? (
+          <div className="py-16 text-center max-w-md mx-auto p-8 rounded-2xl border border-dashed border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5]/50 dark:bg-[#21201E]/50">
+            <BookOpen className="w-10 h-10 text-[#A85D44] mx-auto mb-3" />
+            <h3 className="text-base font-bold mb-1">No courses found</h3>
+            <p className="text-xs text-[#757069] dark:text-[#948F86] mb-5">
+              {searchQuery
+                ? `No courses matched your query "${searchQuery}".`
+                : "No courses have been published yet. Be the first to start a curriculum!"}
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsCreateCourseOpen(true)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#A85D44] text-white text-xs font-semibold hover:bg-[#8F4C35] transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Create Course</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+            {filteredCourses.map((course) => {
+              const isOwner = course.created_by === user?.uid;
+              const canManage = isSuperAdmin || isOwner;
+              const userMembership = course.members.find((m) => m.user_id === user?.uid);
+              const hasPermanentEdit =
+                isSuperAdmin || isOwner || userMembership?.role === "admin" || userMembership?.role === "editor";
+
+              return (
+                <div
+                  key={course.id}
+                  className="group relative flex flex-col justify-between rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] p-5 sm:p-6 shadow-xs hover:shadow-md hover:border-[#A85D44]/40 transition-all"
+                >
+                  <div>
+                    {/* Header: Domain tag & User Role Badge */}
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                      <span className="text-[11px] font-mono uppercase px-2 py-0.5 rounded-md bg-[#EBE6DC] dark:bg-[#2B2A27] text-[#757069] dark:text-[#948F86] font-medium truncate">
+                        {course.domain || "Curriculum"}
+                      </span>
+
+                      {/* Access status badge */}
+                      {isSuperAdmin ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-700 dark:text-purple-300 border border-purple-500/20">
+                          <Crown className="w-3 h-3" />
+                          Super Admin
+                        </span>
+                      ) : isOwner ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#A85D44]/15 text-[#A85D44] dark:text-[#C4785E] border border-[#A85D44]/30">
+                          <Crown className="w-3 h-3" />
+                          Owner (Admin)
+                        </span>
+                      ) : hasPermanentEdit ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#5D7063]/15 text-[#5D7063] dark:text-[#768D7D] border border-[#5D7063]/30">
+                          <ShieldCheck className="w-3 h-3" />
+                          Permanent Editor
+                        </span>
+                      ) : user ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20">
+                          <Sparkles className="w-3 h-3" />
+                          Suggest Edits
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[#757069] italic">Public Course</span>
+                      )}
+                    </div>
+
+                    {/* Title */}
+                    <h2 className="text-lg font-bold text-[#2D2926] dark:text-[#E3DFD7] group-hover:text-[#A85D44] dark:group-hover:text-[#C4785E] transition-colors line-clamp-1">
+                      {course.title}
+                    </h2>
+
+                    {/* Description */}
+                    <p className="text-xs text-[#757069] dark:text-[#948F86] mt-2 line-clamp-3 leading-relaxed min-h-[3rem]">
+                      {course.description || "Comprehensive academic syllabus and technical lecture notes."}
+                    </p>
+                  </div>
+
+                  <div className="pt-5 mt-4 border-t border-[#E8E3D9]/60 dark:border-[#33312E]/60 space-y-3">
+                    {/* Stats */}
+                    <div className="flex items-center gap-4 text-xs text-[#757069] dark:text-[#948F86]">
+                      <div className="flex items-center gap-1" title={`${course.moduleCount} modules`}>
+                        <Layers className="w-3.5 h-3.5 text-[#A85D44] dark:text-[#C4785E]" />
+                        <span>{course.moduleCount} {course.moduleCount === 1 ? "module" : "modules"}</span>
+                      </div>
+                      <div className="flex items-center gap-1" title={`${course.noteCount} notes`}>
+                        <FileText className="w-3.5 h-3.5 text-[#757069]" />
+                        <span>{course.noteCount} {course.noteCount === 1 ? "note" : "notes"}</span>
+                      </div>
+                      {course.memberCount > 0 && (
+                        <div className="flex items-center gap-1" title={`${course.memberCount} collaborators`}>
+                          <Users className="w-3.5 h-3.5 text-[#5D7063]" />
+                          <span>{course.memberCount} {course.memberCount === 1 ? "editor" : "editors"}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      {/* Open Syllabus button -> routes to /notes?course=... */}
+                      <Link
+                        href={`/notes?course=${course.id}`}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-[#EFEBE3] dark:bg-[#292825] hover:bg-[#A85D44] hover:text-white dark:hover:bg-[#A85D44] dark:hover:text-white text-xs font-semibold text-[#2D2926] dark:text-[#E3DFD7] transition-all"
+                      >
+                        <span>Open Syllabus & Notes</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </Link>
+
+                      {/* Course Owner Controls (Manage Access & Delete) */}
+                      {canManage && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedAccessCourse(course)}
+                            title="Manage Access & Collaborators (Grant Permanent Edit Access)"
+                            className="p-2 rounded-xl border border-[#E8E3D9] dark:border-[#33312E] bg-white dark:bg-[#181716] text-[#A85D44] dark:text-[#C4785E] hover:bg-[#A85D44]/10 transition-colors"
+                          >
+                            <ShieldCheck className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCourse(course)}
+                            title={`Delete course "${course.title}"`}
+                            className="p-2 rounded-xl border border-[#E8E3D9] dark:border-[#33312E] bg-white dark:bg-[#181716] text-stone-400 hover:text-rose-600 hover:bg-rose-500/10 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <h3 className="text-xl font-bold text-[#2D2926] dark:text-[#E3DFD7] mb-2">
-                  Welcome to Vi-Lekh
-                </h3>
-                <p className="text-xs text-[#757069] dark:text-[#948F86] mb-6 max-w-md mx-auto leading-relaxed">
-                  Your live PostgreSQL backend is connected and ready. You are running with real data. Create your first course to begin building syllabus notes.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setIsCreateCourseOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] text-white text-xs font-semibold shadow-sm transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Create First Course Syllabus</span>
-                </button>
-              </div>
-            )}
-          </main>
-        </div>
-      )}
+              );
+            })}
+          </div>
+        )}
+      </main>
 
-      {/* Creation Modals */}
+      {/* Creation Modal */}
       <CreateCourseModal
         isOpen={isCreateCourseOpen}
         onClose={() => setIsCreateCourseOpen(false)}
         onCourseCreated={handleCourseCreated}
       />
 
-      {selectedCourse && (
-        <CreateModuleModal
-          isOpen={isCreateModuleOpen}
-          onClose={() => setIsCreateModuleOpen(false)}
-          courseId={selectedCourse.id}
-          courseTitle={selectedCourse.title}
-          existingCount={modules.length}
-          onModuleCreated={handleModuleCreated}
-        />
-      )}
-
-      {selectedCourse && (
-        <CreateNoteModal
-          isOpen={isCreateNoteOpen}
-          onClose={() => setIsCreateNoteOpen(false)}
-          courseId={selectedCourse.id}
-          modules={modules}
-          onNoteCreated={handleNoteCreated}
-        />
-      )}
-
-      {selectedCourse && (
+      {/* Collaborator Access Management Modal */}
+      {selectedAccessCourse && (
         <CourseAccessModal
-          isOpen={isAccessModalOpen}
-          onClose={() => setIsAccessModalOpen(false)}
-          course={selectedCourse}
+          isOpen={Boolean(selectedAccessCourse)}
+          onClose={() => setSelectedAccessCourse(null)}
+          course={selectedAccessCourse}
         />
       )}
     </div>
@@ -437,10 +432,10 @@ export default function Home() {
       <Suspense fallback={
         <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] flex items-center justify-center p-12 text-[#757069]">
           <Loader2 className="w-6 h-6 animate-spin text-[#A85D44] mr-2" />
-          <span className="text-sm font-medium">Loading curriculum...</span>
+          <span className="text-sm font-medium">Loading courses directory...</span>
         </div>
       }>
-        <MainContent />
+        <CoursesContent />
       </Suspense>
     </AuthProvider>
   );

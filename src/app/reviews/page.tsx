@@ -137,16 +137,16 @@ function ReviewsContent() {
               href="/"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors"
             >
-              <FileText className="w-3.5 h-3.5 text-[#757069]" />
-              <span>Notes Reader</span>
+              <BookOpen className="w-3.5 h-3.5 text-[#A85D44] dark:text-[#C4785E]" />
+              <span>Courses</span>
             </Link>
 
             <Link
-              href="/courses"
+              href="/notes"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors"
             >
-              <BookOpen className="w-3.5 h-3.5 text-[#A85D44] dark:text-[#C4785E]" />
-              <span>Courses</span>
+              <FileText className="w-3.5 h-3.5 text-[#757069]" />
+              <span>Notes Reader</span>
             </Link>
 
             <ThemeToggle />
