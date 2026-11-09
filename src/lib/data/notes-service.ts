@@ -97,11 +97,22 @@ export const notesService = {
 
     let currentRevision: Revision | null = null;
     if (note.current_revision_id) {
-      const { data: rev } = await supabase
+      let { data: rev, error: revError } = await supabase
         .from("revisions")
-        .select("*, author:profiles(*)")
+        .select("*, author:profiles!revisions_author_id_fkey(*)")
         .eq("id", note.current_revision_id)
-        .single();
+        .maybeSingle();
+
+      if (revError) {
+        // Fallback to simple select without join if relationship ambiguous
+        const { data: simpleRev } = await supabase
+          .from("revisions")
+          .select("*")
+          .eq("id", note.current_revision_id)
+          .maybeSingle();
+        rev = simpleRev;
+      }
+
       currentRevision = rev as Revision;
     }
 
@@ -373,7 +384,7 @@ export const notesService = {
     const supabase = createClient();
     const { data, error } = await supabase
       .from("revisions")
-      .select("*, author:profiles(*), note:notes(*)")
+      .select("*, author:profiles!revisions_author_id_fkey(*), note:notes(*)")
       .eq("status", "pending")
       .order("created_at", { ascending: false });
     if (error) throw error;

@@ -28,7 +28,7 @@ function EditContent() {
   const searchParams = useSearchParams();
   const noteId = searchParams.get("note");
 
-  const { isSuperAdmin } = useAuth();
+  const { user, isSuperAdmin } = useAuth();
   const [note, setNote] = useState<Note | null>(null);
   const [courseRole, setCourseRole] = useState<CourseRole>("contributor");
   const [html, setHtml] = useState<string>("");
@@ -38,6 +38,16 @@ function EditContent() {
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function checkRole() {
+      if (note) {
+        const role = await notesService.getUserCourseRole(note.course_id);
+        setCourseRole(role);
+      }
+    }
+    checkRole();
+  }, [note, user, isSuperAdmin]);
 
   useEffect(() => {
     async function loadNote() {
@@ -52,7 +62,7 @@ function EditContent() {
         setNote(n);
         
         // Resolve course-level role
-        const role = await notesService.getUserCourseRole(n.course_id, n.created_by);
+        const role = await notesService.getUserCourseRole(n.course_id);
         setCourseRole(role);
 
         // Convert existing blocks to rich HTML for TipTap
@@ -90,10 +100,12 @@ function EditContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!note || !summary.trim() || isViewerOnly) return;
+    if (!note || isViewerOnly) return;
 
     setIsSubmitting(true);
     setError(null);
+
+    const changeSummary = summary.trim() || "Updated note content";
 
     try {
       const blocks = htmlToBlocks(html);
@@ -101,7 +113,7 @@ function EditContent() {
         note_id: note.id,
         base_revision_id: note.current_revision_id || undefined,
         blocks,
-        change_summary: summary,
+        change_summary: changeSummary,
         isDirectPublish: canDirectPublish,
       });
 
@@ -267,11 +279,10 @@ function EditContent() {
             <input
               id="summary"
               type="text"
-              required
               disabled={isViewerOnly}
               value={summary}
               onChange={(e) => setSummary(e.target.value)}
-              placeholder="e.g. Added derivation of gradient descent, inserted callouts, and corrected typography"
+              placeholder="(Optional) e.g. Added derivation of gradient descent, inserted callouts, and corrected typography"
               className="w-full text-xs sm:text-sm p-3 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-white dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] outline-none focus:border-[#A85D44] disabled:opacity-50"
             />
           </div>
@@ -286,7 +297,7 @@ function EditContent() {
             </span>
             <button
               type="submit"
-              disabled={isSubmitting || !summary.trim() || isViewerOnly}
+              disabled={isSubmitting || isViewerOnly}
               className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] disabled:opacity-50 text-white text-xs sm:text-sm font-medium shadow-sm transition-colors"
             >
               {isSubmitting ? (

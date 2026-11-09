@@ -143,10 +143,13 @@ export function NoteReader({
             }
 
             if (block.type === "paragraph") {
+              if (!block.content?.trim()) return null;
               return (
-                <p key={block.id} className="text-base sm:text-[17px] leading-[1.8] text-[#2D2926] dark:text-[#E3DFD7]">
-                  {block.content}
-                </p>
+                <p
+                  key={block.id}
+                  className="text-base sm:text-[17px] leading-[1.8] text-[#2D2926] dark:text-[#E3DFD7]"
+                  dangerouslySetInnerHTML={{ __html: block.content }}
+                />
               );
             }
 
@@ -181,24 +184,57 @@ export function NoteReader({
             }
 
             if (block.type === "callout") {
+              const calloutType = (block.props?.calloutType as string) || "tip";
+              const icon = calloutType === "warning" ? "⚠️" : calloutType === "info" ? "ℹ️" : "💡";
               return (
                 <div
                   key={block.id}
                   className="my-6 p-4 rounded-xl border border-[#E8E3D9] dark:border-[#383530] bg-[#F7F4EB]/80 dark:bg-[#22201D]/80 flex items-start gap-3.5 text-sm text-[#2D2926] dark:text-[#E3DFD7]"
                 >
-                  <div className="p-1 rounded-md bg-[#A85D44]/10 text-[#A85D44] dark:text-[#C4785E] shrink-0 mt-0.5">
-                    <Sparkles className="w-4 h-4" />
-                  </div>
-                  <div className="leading-relaxed text-[15px]">{block.content}</div>
+                  <span className="text-base select-none shrink-0 mt-0.5">{icon}</span>
+                  <div
+                    className="leading-relaxed text-[15px]"
+                    dangerouslySetInnerHTML={{ __html: block.content }}
+                  />
                 </div>
               );
             }
 
             if (block.type === "bullet_list") {
               return (
-                <li key={block.id} className="ml-5 list-disc text-base leading-relaxed text-[#2D2926] dark:text-[#E3DFD7]">
-                  {block.content}
-                </li>
+                <li
+                  key={block.id}
+                  className="ml-5 list-disc text-base leading-relaxed text-[#2D2926] dark:text-[#E3DFD7]"
+                  dangerouslySetInnerHTML={{ __html: block.content }}
+                />
+              );
+            }
+
+            if (block.type === "numbered_list") {
+              return (
+                <li
+                  key={block.id}
+                  className="ml-5 list-decimal text-base leading-relaxed text-[#2D2926] dark:text-[#E3DFD7]"
+                  dangerouslySetInnerHTML={{ __html: block.content }}
+                />
+              );
+            }
+
+            if (block.type === "image") {
+              return (
+                <figure key={block.id} className="my-8">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={block.content}
+                    alt={String(block.props?.alt || "Illustration")}
+                    className="rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] shadow-md max-w-full mx-auto object-contain max-h-[550px]"
+                  />
+                  {Boolean(block.props?.alt) && (
+                    <figcaption className="text-center text-xs text-[#757069] dark:text-[#948F86] mt-2.5 italic">
+                      {String(block.props?.alt)}
+                    </figcaption>
+                  )}
+                </figure>
               );
             }
 
