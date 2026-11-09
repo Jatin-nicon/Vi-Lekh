@@ -13,7 +13,10 @@ import {
   BookOpen,
   ShieldCheck,
   FolderPlus,
-  Trash2
+  Trash2,
+  Pencil,
+  Check,
+  X
 } from "lucide-react";
 import Link from "next/link";
 
@@ -29,7 +32,9 @@ interface CourseSidebarProps {
   onDeleteCourse?: (course: Course) => void;
   onAddNote: () => void;
   onAddModule?: () => void;
+  onUpdateModule?: (module: Module, newTitle: string) => void;
   onDeleteModule?: (module: Module) => void;
+  onUpdateNote?: (note: Note, newTitle: string) => void;
   onDeleteNote?: (note: Note) => void;
   pendingCount?: number;
   canManageAccess?: boolean;
@@ -48,7 +53,9 @@ export function CourseSidebar({
   onDeleteCourse,
   onAddNote,
   onAddModule,
+  onUpdateModule,
   onDeleteModule,
+  onUpdateNote,
   onDeleteNote,
   pendingCount = 0,
   canManageAccess = false,
@@ -57,6 +64,12 @@ export function CourseSidebar({
   const [collapsedModules, setCollapsedModules] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
   const [isCourseDropdownOpen, setIsCourseDropdownOpen] = useState(false);
+
+  const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
+  const [editingModuleTitle, setEditingModuleTitle] = useState("");
+
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteTitle, setEditingNoteTitle] = useState("");
 
   const toggleModule = (modId: string) => {
     setCollapsedModules((prev) => ({
@@ -234,43 +247,168 @@ export function CourseSidebar({
         {modules.map((mod) => {
           const isCollapsed = collapsedModules[mod.id];
           const moduleNotes = filteredNotes.filter(
-            (n) => n.module_id === mod.id || !n.module_id
+            (n) => n.module_id === mod.id || (!n.module_id && modules[0]?.id === mod.id)
           );
 
           return (
             <div key={mod.id} className="group/mod space-y-1">
-              <div className="w-full flex items-center justify-between text-left px-2 py-1 rounded-md hover:bg-[#EFEBE3] dark:hover:bg-[#292825] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors">
-                <button
-                  type="button"
-                  onClick={() => toggleModule(mod.id)}
-                  className="flex-1 flex items-center justify-between text-left min-w-0 pr-1.5"
-                >
-                  <span className="line-clamp-1">{mod.title}</span>
-                  {isCollapsed ? (
-                    <ChevronRight className="w-3.5 h-3.5 text-[#757069] shrink-0" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5 text-[#757069] shrink-0" />
-                  )}
-                </button>
-                {canManageAccess && onDeleteModule && (
+              {editingModuleId === mod.id ? (
+                <div className="flex items-center gap-1.5 px-2 py-1 bg-[#FAF8F5] dark:bg-[#21201E] rounded-md border border-[#A85D44]/40 shadow-sm">
+                  <input
+                    type="text"
+                    autoFocus
+                    value={editingModuleTitle}
+                    onChange={(e) => setEditingModuleTitle(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        if (editingModuleTitle.trim() && onUpdateModule) {
+                          onUpdateModule(mod, editingModuleTitle.trim());
+                        }
+                        setEditingModuleId(null);
+                      } else if (e.key === "Escape") {
+                        setEditingModuleId(null);
+                      }
+                    }}
+                    className="flex-1 text-xs px-1.5 py-0.5 bg-transparent border-none outline-none font-medium text-[#2D2926] dark:text-[#E3DFD7]"
+                  />
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onDeleteModule(mod);
+                      if (editingModuleTitle.trim() && onUpdateModule) {
+                        onUpdateModule(mod, editingModuleTitle.trim());
+                      }
+                      setEditingModuleId(null);
                     }}
-                    title={`Delete module "${mod.title}"`}
-                    className="opacity-0 group-hover/mod:opacity-100 p-1 rounded hover:bg-rose-500/10 text-stone-400 hover:text-rose-600 transition-all shrink-0"
+                    title="Save module title"
+                    className="p-1 rounded hover:bg-[#A85D44]/15 text-[#A85D44] dark:text-[#C4785E] transition-colors"
                   >
-                    <Trash2 className="w-3 h-3" />
+                    <Check className="w-3 h-3" />
                   </button>
-                )}
-              </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingModuleId(null);
+                    }}
+                    title="Cancel"
+                    className="p-1 rounded hover:bg-stone-500/10 text-[#757069] transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ) : (
+                <div className="w-full flex items-center justify-between text-left px-2 py-1 rounded-md hover:bg-[#EFEBE3] dark:hover:bg-[#292825] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors">
+                  <button
+                    type="button"
+                    onClick={() => toggleModule(mod.id)}
+                    onDoubleClick={(e) => {
+                      if (canManageAccess && onUpdateModule) {
+                        e.stopPropagation();
+                        setEditingModuleId(mod.id);
+                        setEditingModuleTitle(mod.title);
+                      }
+                    }}
+                    className="flex-1 flex items-center justify-between text-left min-w-0 pr-1.5"
+                  >
+                    <span className="line-clamp-1">{mod.title}</span>
+                    {isCollapsed ? (
+                      <ChevronRight className="w-3.5 h-3.5 text-[#757069] shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5 text-[#757069] shrink-0" />
+                    )}
+                  </button>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    {canManageAccess && onUpdateModule && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingModuleId(mod.id);
+                          setEditingModuleTitle(mod.title);
+                        }}
+                        title={`Edit module title "${mod.title}"`}
+                        className="opacity-0 group-hover/mod:opacity-100 p-1 rounded hover:bg-[#A85D44]/10 text-stone-400 hover:text-[#A85D44] dark:hover:text-[#C4785E] transition-all"
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    )}
+                    {canManageAccess && onDeleteModule && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteModule(mod);
+                        }}
+                        title={`Delete module "${mod.title}"`}
+                        className="opacity-0 group-hover/mod:opacity-100 p-1 rounded hover:bg-rose-500/10 text-stone-400 hover:text-rose-600 transition-all"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {!isCollapsed && (
                 <div className="pl-2 space-y-0.5 border-l border-[#E8E3D9] dark:border-[#33312E] ml-2">
                   {moduleNotes.map((note) => {
                     const isActive = note.id === activeNoteId;
+
+                    if (editingNoteId === note.id) {
+                      return (
+                        <div
+                          key={note.id}
+                          className="flex items-center gap-1.5 px-2 py-1 bg-[#FAF8F5] dark:bg-[#21201E] rounded-md border border-[#A85D44]/40 shadow-sm my-0.5"
+                        >
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editingNoteTitle}
+                            onChange={(e) => setEditingNoteTitle(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                if (editingNoteTitle.trim() && onUpdateNote) {
+                                  onUpdateNote(note, editingNoteTitle.trim());
+                                }
+                                setEditingNoteId(null);
+                              } else if (e.key === "Escape") {
+                                setEditingNoteId(null);
+                              }
+                            }}
+                            className="flex-1 text-xs px-1.5 py-0.5 bg-transparent border-none outline-none font-medium text-[#2D2926] dark:text-[#E3DFD7]"
+                          />
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (editingNoteTitle.trim() && onUpdateNote) {
+                                onUpdateNote(note, editingNoteTitle.trim());
+                              }
+                              setEditingNoteId(null);
+                            }}
+                            title="Save note title"
+                            className="p-1 rounded hover:bg-[#A85D44]/15 text-[#A85D44] dark:text-[#C4785E] transition-colors"
+                          >
+                            <Check className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingNoteId(null);
+                            }}
+                            title="Cancel"
+                            className="p-1 rounded hover:bg-stone-500/10 text-[#757069] transition-colors"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      );
+                    }
+
                     return (
                       <div
                         key={note.id}
@@ -283,6 +421,13 @@ export function CourseSidebar({
                         <button
                           type="button"
                           onClick={() => onSelectNote(note)}
+                          onDoubleClick={(e) => {
+                            if (canManageAccess && onUpdateNote) {
+                              e.stopPropagation();
+                              setEditingNoteId(note.id);
+                              setEditingNoteTitle(note.title);
+                            }
+                          }}
                           className="flex-1 flex items-center gap-2 min-w-0 text-left"
                         >
                           <FileText
@@ -294,19 +439,35 @@ export function CourseSidebar({
                           />
                           <span className="truncate">{note.title}</span>
                         </button>
-                        {canManageAccess && onDeleteNote && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDeleteNote(note);
-                            }}
-                            title={`Delete note "${note.title}"`}
-                            className="opacity-0 group-hover/note:opacity-100 p-1 rounded hover:bg-rose-500/10 text-stone-400 hover:text-rose-600 transition-all shrink-0 ml-1"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
+                        <div className="flex items-center gap-0.5 shrink-0 ml-1">
+                          {canManageAccess && onUpdateNote && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingNoteId(note.id);
+                                setEditingNoteTitle(note.title);
+                              }}
+                              title={`Rename note "${note.title}"`}
+                              className="opacity-0 group-hover/note:opacity-100 p-1 rounded hover:bg-[#A85D44]/10 text-stone-400 hover:text-[#A85D44] dark:hover:text-[#C4785E] transition-all"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          )}
+                          {canManageAccess && onDeleteNote && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteNote(note);
+                              }}
+                              title={`Delete note "${note.title}"`}
+                              className="opacity-0 group-hover/note:opacity-100 p-1 rounded hover:bg-rose-500/10 text-stone-400 hover:text-rose-600 transition-all"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}

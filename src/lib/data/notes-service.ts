@@ -229,6 +229,83 @@ export const notesService = {
   },
 
   /**
+   * Updates a module's title and slug
+   */
+  async updateModule(moduleId: string, updates: { title: string; slug?: string }): Promise<Module> {
+    const supabase = createClient();
+    const user = getFirebaseUser();
+    const isSuperAdmin = (user.email || "").toLowerCase() === SUPER_ADMIN_EMAIL;
+
+    if (!isSuperAdmin) {
+      const { data: mod } = await supabase
+        .from("modules")
+        .select("course_id")
+        .eq("id", moduleId)
+        .single();
+      if (mod) {
+        const role = await notesService.getUserCourseRole(mod.course_id);
+        if (role !== "admin" && role !== "editor") {
+          throw new Error("Only course maintainers or the Super Admin can edit modules.");
+        }
+      }
+    }
+
+    const slug = updates.slug || updates.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+    const { data, error } = await supabase
+      .from("modules")
+      .update({
+        title: updates.title,
+        slug,
+      })
+      .eq("id", moduleId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as Module;
+  },
+
+  /**
+   * Updates a note's title and slug
+   */
+  async updateNote(noteId: string, updates: { title: string; slug?: string }): Promise<Note> {
+    const supabase = createClient();
+    const user = getFirebaseUser();
+    const isSuperAdmin = (user.email || "").toLowerCase() === SUPER_ADMIN_EMAIL;
+
+    if (!isSuperAdmin) {
+      const { data: note } = await supabase
+        .from("notes")
+        .select("course_id")
+        .eq("id", noteId)
+        .single();
+      if (note) {
+        const role = await notesService.getUserCourseRole(note.course_id);
+        if (role !== "admin" && role !== "editor") {
+          throw new Error("Only course maintainers or the Super Admin can edit notes.");
+        }
+      }
+    }
+
+    const slug = updates.slug || updates.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+    const { data, error } = await supabase
+      .from("notes")
+      .update({
+        title: updates.title,
+        slug,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", noteId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as Note;
+  },
+
+  /**
    * Creates a note in a course/module
    */
   async createNote(note: {

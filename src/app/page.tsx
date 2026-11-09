@@ -44,6 +44,8 @@ function MainContent() {
   const [isCreateModuleOpen, setIsCreateModuleOpen] = useState(false);
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
 
+  const [courseRole, setCourseRole] = useState<string>("viewer");
+
   // 1. Initial Load of Courses & Pending Revisions
   const loadInitialData = useCallback(async () => {
     try {
@@ -79,9 +81,13 @@ function MainContent() {
   // 2. Load Modules and Notes when Selected Course Changes
   const loadCourseData = useCallback(async (course: Course) => {
     try {
-      const { modules: m, notes: n } = await notesService.getCourseWithModulesAndNotes(course.id);
+      const [{ modules: m, notes: n }, role] = await Promise.all([
+        notesService.getCourseWithModulesAndNotes(course.id),
+        notesService.getUserCourseRole(course.id, course.created_by).catch(() => "viewer"),
+      ]);
       setModules(m);
       setNotes(n);
+      setCourseRole(role);
 
       if (n.length > 0) {
         // Select first note
@@ -100,6 +106,15 @@ function MainContent() {
       loadCourseData(selectedCourse);
     }
   }, [selectedCourse, loadCourseData]);
+
+  useEffect(() => {
+    if (selectedCourse) {
+      notesService
+        .getUserCourseRole(selectedCourse.id, selectedCourse.created_by)
+        .then(setCourseRole)
+        .catch(() => setCourseRole("viewer"));
+    }
+  }, [selectedCourse, user]);
 
   // 3. Load Active Note and its Active Revision
   const loadNoteData = async (noteId: string) => {
@@ -156,6 +171,27 @@ function MainContent() {
       alert(extractErrorMessage(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleUpdateModule = async (mod: Module, newTitle: string) => {
+    try {
+      const updated = await notesService.updateModule(mod.id, { title: newTitle });
+      setModules((prev) => prev.map((m) => (m.id === mod.id ? updated : m)));
+    } catch (err: unknown) {
+      alert(extractErrorMessage(err));
+    }
+  };
+
+  const handleUpdateNote = async (note: Note, newTitle: string) => {
+    try {
+      const updated = await notesService.updateNote(note.id, { title: newTitle });
+      setNotes((prev) => prev.map((n) => (n.id === note.id ? updated : n)));
+      if (activeNote?.id === note.id) {
+        setActiveNote(updated);
+      }
+    } catch (err: unknown) {
+      alert(extractErrorMessage(err));
     }
   };
 
@@ -264,10 +300,15 @@ function MainContent() {
             onDeleteCourse={handleDeleteCourse}
             onAddNote={() => setIsCreateNoteOpen(true)}
             onAddModule={() => setIsCreateModuleOpen(true)}
+            onUpdateModule={handleUpdateModule}
             onDeleteModule={handleDeleteModule}
+            onUpdateNote={handleUpdateNote}
             onDeleteNote={handleDeleteNote}
             pendingCount={pendingCount}
-            canManageAccess={Boolean(isSuperAdmin || (selectedCourse && selectedCourse.created_by === user?.uid))}
+            canManageAccess={Boolean(
+              isSuperAdmin ||
+              (selectedCourse && (selectedCourse.created_by === user?.uid || courseRole === "admin" || courseRole === "editor"))
+            )}
             onManageAccess={() => setIsAccessModalOpen(true)}
           />
 
