@@ -8,6 +8,7 @@ import {
   type User as FirebaseUser 
 } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase/config";
+import { notesService } from "@/lib/data/notes-service";
 import type { Profile, UserRole } from "@/lib/supabase/types";
 
 export const SUPER_ADMIN_EMAIL = (
@@ -57,6 +58,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           updated_at: new Date().toISOString(),
         };
         setProfile(userProfile);
+        // Ensure user profile exists in Supabase so collaborators can search and grant roles
+        notesService.syncUserProfile(firebaseUser).catch(() => {});
       } else {
         setUser(null);
         setProfile(null);

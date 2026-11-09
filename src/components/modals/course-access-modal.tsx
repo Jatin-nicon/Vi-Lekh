@@ -222,7 +222,8 @@ export function CourseAccessModal({ isOpen, onClose, course }: CourseAccessModal
               onChange={(e) => setSelectedRole(e.target.value as CourseRole)}
               className="px-3 py-2 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#A85D44]/30"
             >
-              <option value="editor">Editor (Direct Publish & Reviews)</option>
+              <option value="editor">Editor (Permanent Direct Edit & Publish)</option>
+              <option value="admin">Admin (Full Course Management)</option>
               <option value="contributor">Contributor (Suggest Revisions)</option>
               <option value="viewer">Viewer (Read-only)</option>
             </select>

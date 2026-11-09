@@ -28,7 +28,7 @@ function EditContent() {
   const searchParams = useSearchParams();
   const noteId = searchParams.get("note");
 
-  const { user, isSuperAdmin } = useAuth();
+  const { user, isSuperAdmin, signInWithGoogle } = useAuth();
   const [note, setNote] = useState<Note | null>(null);
   const [courseRole, setCourseRole] = useState<CourseRole>("contributor");
   const [html, setHtml] = useState<string>("");
@@ -95,12 +95,11 @@ function EditContent() {
     loadNote();
   }, [noteId]);
 
-  const canDirectPublish = isSuperAdmin || courseRole === "admin" || courseRole === "editor";
-  const isViewerOnly = !isSuperAdmin && courseRole === "viewer";
+  const canDirectPublish = Boolean(isSuperAdmin || courseRole === "admin" || courseRole === "editor");
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!note || isViewerOnly) return;
+    if (!note || !user) return;
 
     setIsSubmitting(true);
     setError(null);
@@ -119,9 +118,9 @@ function EditContent() {
 
       if (canDirectPublish) {
         alert("Published immediately! The live note has been updated.");
-        router.push("/");
+        router.push(`/?course=${note.course_id}`);
       } else {
-        alert("Revision proposal submitted! Placed in the review queue.");
+        alert("Revision proposal submitted! Placed in the review queue for course maintainers.");
         router.push("/reviews");
       }
     } catch (err: unknown) {
@@ -173,9 +172,9 @@ function EditContent() {
                 {isSuperAdmin 
                   ? "Super Admin — Direct Edit Mode" 
                   : canDirectPublish 
-                  ? "Course Editor — Direct Publish Mode" 
-                  : isViewerOnly
-                  ? "View-Only Course Access"
+                  ? "Permanent Editor — Direct Publish Mode" 
+                  : !user
+                  ? "Sign In to Suggest Edits"
                   : "Contributor — Suggestion / Review Mode"}
               </span>
               <h1 className="text-sm font-semibold truncate max-w-xs sm:max-w-md text-[#2D2926] dark:text-[#E3DFD7]">
@@ -270,7 +269,7 @@ function EditContent() {
         {/* Change Summary & Submit Box */}
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto p-6 rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] shadow-sm space-y-4">
           <h2 className="text-sm font-semibold tracking-wide text-[#2D2926] dark:text-[#E3DFD7]">
-            {canDirectPublish ? "Publish Note Update Directly" : "Propose Revision to Course Maintainers"}
+            {canDirectPublish ? "Publish Note Update Directly (Permanent Editor)" : "Propose Revision to Course Maintainers"}
           </h2>
           <div>
             <label htmlFor="summary" className="block text-xs font-medium text-[#757069] dark:text-[#948F86] mb-1.5">
@@ -279,7 +278,7 @@ function EditContent() {
             <input
               id="summary"
               type="text"
-              disabled={isViewerOnly}
+              disabled={!user}
               value={summary}
               onChange={(e) => setSummary(e.target.value)}
               placeholder="(Optional) e.g. Added derivation of gradient descent, inserted callouts, and corrected typography"
@@ -287,25 +286,38 @@ function EditContent() {
             />
           </div>
 
-          <div className="flex items-center justify-between pt-2">
-            <span className="text-xs text-[#757069] dark:text-[#948F86]">
-              {isViewerOnly 
-                ? "🔒 View-only permission: contact the Super Admin for course collaborator access."
-                : canDirectPublish 
-                ? "✓ Maintainer privilege: edits publish directly to live note." 
-                : "ℹ️ Contributor role: revision will be sent to the review queue."}
-            </span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
+            {!user ? (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#757069] dark:text-[#948F86]">
+                  🔒 Sign in with Google to propose and suggest edits for this note.
+                </span>
+                <button
+                  type="button"
+                  onClick={signInWithGoogle}
+                  className="px-3 py-1.5 rounded-lg bg-[#A85D44] text-white text-xs font-semibold hover:bg-[#8F4C35] transition-colors"
+                >
+                  Sign in with Google
+                </button>
+              </div>
+            ) : (
+              <span className="text-xs text-[#757069] dark:text-[#948F86]">
+                {canDirectPublish 
+                  ? "✓ Permanent Editor privilege: edits publish directly to live note." 
+                  : "ℹ️ Suggestion mode: your revision will be sent to the review queue for course maintainers."}
+              </span>
+            )}
             <button
               type="submit"
-              disabled={isSubmitting || isViewerOnly}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] disabled:opacity-50 text-white text-xs sm:text-sm font-medium shadow-sm transition-colors"
+              disabled={isSubmitting || !user}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] disabled:opacity-50 text-white text-xs sm:text-sm font-medium shadow-sm transition-colors"
             >
               {isSubmitting ? (
                 <span>Submitting...</span>
               ) : (
                 <>
                   <Send className="w-4 h-4" />
-                  <span>{canDirectPublish ? "Publish Update" : "Submit for Review"}</span>
+                  <span>{canDirectPublish ? "Publish Update Directly" : "Submit Suggestion for Review"}</span>
                 </>
               )}
             </button>

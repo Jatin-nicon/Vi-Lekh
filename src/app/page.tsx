@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, Suspense } from "react";
 import { notesService } from "@/lib/data/notes-service";
 import { useAuth, AuthProvider } from "@/lib/auth/auth-context";
 import { CourseSidebar } from "@/components/navigation/course-sidebar";
@@ -21,10 +21,12 @@ import {
   Sparkles
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 function MainContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const courseParam = searchParams.get("course");
   const { user, isSuperAdmin } = useAuth();
 
   const [courses, setCourses] = useState<Course[]>([]);
@@ -59,7 +61,10 @@ function MainContent() {
       setPendingCount(pendingRevs.length);
 
       if (coursesList.length > 0) {
-        setSelectedCourse(coursesList[0]);
+        const found = courseParam 
+          ? coursesList.find((c) => c.id === courseParam || c.slug === courseParam)
+          : null;
+        setSelectedCourse(found || coursesList[0]);
       } else {
         setSelectedCourse(null);
         setModules([]);
@@ -72,7 +77,17 @@ function MainContent() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [courseParam]);
+
+  // Keep selected course synchronized if query param changes externally
+  useEffect(() => {
+    if (courseParam && courses.length > 0) {
+      const match = courses.find((c) => c.id === courseParam || c.slug === courseParam);
+      if (match && match.id !== selectedCourse?.id) {
+        setSelectedCourse(match);
+      }
+    }
+  }, [courseParam, courses, selectedCourse?.id]);
 
   useEffect(() => {
     loadInitialData();
@@ -255,8 +270,14 @@ function MainContent() {
           </div>
 
           {/* Right Action Controls */}
-          <div className="flex items-center gap-3 sm:gap-4">
-            <ThemeToggle />
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Link
+              href="/courses"
+              className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-[#A85D44] dark:text-[#C4785E]" />
+              <span>All Courses</span>
+            </Link>
 
             <Link
               href="/reviews"
@@ -271,8 +292,8 @@ function MainContent() {
               )}
             </Link>
 
-            {/* User Account & Auth Menu */}
             <div className="flex items-center gap-2 pl-2 border-l border-[#E8E3D9] dark:border-[#33312E]">
+              <ThemeToggle />
               <UserMenu />
             </div>
           </div>
@@ -413,7 +434,14 @@ function MainContent() {
 export default function Home() {
   return (
     <AuthProvider>
-      <MainContent />
+      <Suspense fallback={
+        <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] flex items-center justify-center p-12 text-[#757069]">
+          <Loader2 className="w-6 h-6 animate-spin text-[#A85D44] mr-2" />
+          <span className="text-sm font-medium">Loading curriculum...</span>
+        </div>
+      }>
+        <MainContent />
+      </Suspense>
     </AuthProvider>
   );
 }

@@ -235,6 +235,26 @@ export function NoteReader({
         </article>
         )}
 
+        {/* Collaborative Improvement Banner */}
+        <div className="mt-12 p-4 sm:p-5 rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div>
+            <p className="font-semibold text-[#2D2926] dark:text-[#E3DFD7] text-sm">
+              Notice a mistake, missing formula, or want to enhance this lecture note?
+            </p>
+            <p className="text-[#757069] dark:text-[#948F86] mt-0.5">
+              Anyone with an account can suggest edits. Permanent editors publish directly; contributors submit to the review queue.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onProposeEdit}
+            className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-[#A85D44] hover:bg-[#8F4C35] text-white text-xs font-semibold shadow-xs transition-colors shrink-0"
+          >
+            <GitPullRequest className="w-3.5 h-3.5" />
+            <span>Suggest Edits</span>
+          </button>
+        </div>
+
         {/* Notebook Footer Credits */}
         <div className="mt-12 pt-6 border-t border-[#E8E3D9]/60 dark:border-[#33312E] flex items-center justify-between text-xs text-[#757069] dark:text-[#948F86]">
           <div className="flex items-center gap-2">

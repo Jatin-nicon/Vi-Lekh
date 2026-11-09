@@ -6,6 +6,7 @@ import { useAuth, AuthProvider } from "@/lib/auth/auth-context";
 import { BlockDiffViewer } from "@/components/diff/block-diff-viewer";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/auth/user-menu";
+import { BookOpen, FileText } from "lucide-react";
 import type { Revision } from "@/lib/supabase/types";
 import { 
   GitPullRequest, 
@@ -131,7 +132,23 @@ function ReviewsContent() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Link
+              href="/"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors"
+            >
+              <FileText className="w-3.5 h-3.5 text-[#757069]" />
+              <span>Notes Reader</span>
+            </Link>
+
+            <Link
+              href="/courses"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-[#A85D44] dark:text-[#C4785E]" />
+              <span>Courses</span>
+            </Link>
+
             <ThemeToggle />
             <UserMenu />
           </div>

@@ -8,7 +8,8 @@ import type {
   NoteBlock, 
   Profile, 
   CourseMember, 
-  CourseRole 
+  CourseRole,
+  CourseWithStats
 } from "@/lib/supabase/types";
 
 export interface PendingRevisionItem extends Revision {
@@ -54,6 +55,48 @@ export const notesService = {
       .order("created_at", { ascending: true });
     if (error) throw error;
     return (data || []) as Course[];
+  },
+
+  /**
+   * Fetches all registered courses with module count, note count, member count and creator
+   */
+  async getCoursesWithDetails(): Promise<CourseWithStats[]> {
+    const supabase = createClient();
+    const [coursesRes, modulesRes, notesRes, membersRes] = await Promise.all([
+      supabase.from("courses").select("*, creator:profiles(*)").order("created_at", { ascending: false }),
+      supabase.from("modules").select("id, course_id"),
+      supabase.from("notes").select("id, course_id"),
+      supabase.from("course_members").select("*, profile:profiles(*)"),
+    ]);
+
+    if (coursesRes.error) throw coursesRes.error;
+    const courses = (coursesRes.data || []) as (Course & { creator?: Profile })[];
+    const modules = (modulesRes.data || []) as { id: string; course_id: string }[];
+    const notes = (notesRes.data || []) as { id: string; course_id: string }[];
+    const members = (membersRes.data || []) as CourseMember[];
+
+    return courses.map((course) => {
+      const courseModules = modules.filter((m) => m.course_id === course.id);
+      const courseNotes = notes.filter((n) => n.course_id === course.id);
+      const courseMembers = members.filter((m) => m.course_id === course.id);
+
+      return {
+        ...course,
+        moduleCount: courseModules.length,
+        noteCount: courseNotes.length,
+        memberCount: courseMembers.length,
+        members: courseMembers,
+        creator: course.creator || null,
+      };
+    });
+  },
+
+  /**
+   * Syncs user profile to Supabase on sign-in
+   */
+  async syncUserProfile(user: { uid: string; email?: string | null; displayName?: string | null; photoURL?: string | null }) {
+    const supabase = createClient();
+    await syncProfile(supabase, user as ReturnType<typeof getFirebaseUser>);
   },
 
   /**
