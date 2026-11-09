@@ -30,12 +30,22 @@ function getFirebaseUser() {
 async function syncProfile(supabase: ReturnType<typeof createClient>, user: ReturnType<typeof getFirebaseUser>) {
   try {
     const isMaster = user.email?.toLowerCase() === SUPER_ADMIN_EMAIL;
+    const { data: existing } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.uid)
+      .maybeSingle();
+
+    const roleToSave = isMaster
+      ? "super_admin"
+      : (existing?.role && existing.role !== "super_admin" ? existing.role : "contributor");
+
     await supabase.from("profiles").upsert({
       id: user.uid,
       username: user.email?.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "_") || "user",
       display_name: user.displayName || user.email?.split("@")[0] || "User",
       avatar_url: user.photoURL || null,
-      role: isMaster ? "super_admin" : "contributor",
+      role: roleToSave,
       updated_at: new Date().toISOString(),
     });
   } catch {

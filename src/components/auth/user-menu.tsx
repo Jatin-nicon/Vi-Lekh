@@ -4,16 +4,13 @@ import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { AuthModal } from "@/components/auth/auth-modal";
 import { 
-  User, 
   LogIn, 
   LogOut, 
-  ShieldCheck, 
-  ChevronDown,
-  Sparkles
+  ChevronDown 
 } from "lucide-react";
 
 export function UserMenu() {
-  const { user, profile, isSuperAdmin, isCoreTeam, signOut, simulateRole } = useAuth();
+  const { user, profile, isSuperAdmin, signOut } = useAuth();
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -54,33 +51,20 @@ export function UserMenu() {
               {profile?.display_name}
             </span>
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#A85D44]/15 text-[#A85D44] dark:text-[#C4785E] font-semibold uppercase">
-              {isSuperAdmin ? "Super Admin" : profile?.role === "core_team" ? "Staff" : "Learner"}
+              {isSuperAdmin ? "Super Admin" : profile?.role === "core_team" ? "Core Team" : "Contributor"}
             </span>
             <ChevronDown className="w-3.5 h-3.5 text-[#757069]" />
           </button>
         ) : (
           // Guest User State with Sign In CTA
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsAuthOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] text-white text-xs font-medium shadow-sm transition-colors"
-            >
-              <LogIn className="w-3.5 h-3.5" />
-              <span>Sign In</span>
-            </button>
-            
-            {/* Quick Demo Role Switcher for preview */}
-            <button
-              type="button"
-              onClick={() => simulateRole(isCoreTeam ? "contributor" : "core_team")}
-              title="Toggle preview role between Core Team and Contributor"
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] text-xs font-medium text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#292825] transition-colors"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-[#A85D44] dark:text-[#C4785E]" />
-              <span className="text-[11px]">Sim: {profile?.role}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setIsAuthOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] text-white text-xs font-medium shadow-sm transition-colors"
+          >
+            <LogIn className="w-3.5 h-3.5" />
+            <span>Sign In</span>
+          </button>
         )}
 
         {/* Dropdown Menu */}
@@ -89,38 +73,12 @@ export function UserMenu() {
             <div className="px-3 py-2 border-b border-[#E8E3D9] dark:border-[#33312E] mb-1">
               <p className="text-xs font-semibold truncate">{profile?.display_name}</p>
               <p className="text-[11px] text-[#757069] dark:text-[#948F86] truncate">{user.email}</p>
-            </div>
-
-            {/* Role switch toggle */}
-            <div className="px-3 py-2 text-xs">
-              <span className="text-[#757069] text-[11px] block mb-1">Test Role Simulation:</span>
-              <div className="flex gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => simulateRole("core_team")}
-                  className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                    profile?.role === "core_team"
-                      ? "bg-[#A85D44] text-white"
-                      : "bg-[#F5F2EB] dark:bg-[#181716] text-[#757069] hover:bg-[#EFEBE3]"
-                  }`}
-                >
-                  Core Team
-                </button>
-                <button
-                  type="button"
-                  onClick={() => simulateRole("contributor")}
-                  className={`px-2 py-1 rounded text-[11px] font-medium transition-colors ${
-                    profile?.role === "contributor"
-                      ? "bg-[#A85D44] text-white"
-                      : "bg-[#F5F2EB] dark:bg-[#181716] text-[#757069] hover:bg-[#EFEBE3]"
-                  }`}
-                >
-                  Contributor
-                </button>
+              <div className="mt-1">
+                <span className="inline-block text-[10px] px-1.5 py-0.2 rounded bg-[#A85D44]/10 text-[#A85D44] dark:text-[#C4785E] font-semibold">
+                  {isSuperAdmin ? "Role: Super Admin" : profile?.role === "core_team" ? "Role: Core Team" : "Role: Contributor"}
+                </span>
               </div>
             </div>
-
-            <div className="border-t border-[#E8E3D9] dark:border-[#33312E] my-1" />
 
             {/* Sign Out */}
             <button

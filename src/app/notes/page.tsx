@@ -283,14 +283,6 @@ function NotesContent() {
             </Link>
 
             <Link
-              href="/notes"
-              className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#A85D44]/15 border border-[#A85D44]/30 text-[#A85D44] dark:text-[#C4785E] text-xs font-semibold shadow-xs"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Notes Reader</span>
-            </Link>
-
-            <Link
               href="/reviews"
               className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors"
             >
