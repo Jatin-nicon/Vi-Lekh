@@ -5,7 +5,7 @@ import { notesService } from "@/lib/data/notes-service";
 import { extractErrorMessage } from "@/lib/utils";
 import { useAuth, AuthProvider } from "@/lib/auth/auth-context";
 import { checkCourseEditAccess, isSuperAdmin as checkIsSuperAdmin } from "@/lib/auth/roles";
-import { RichEditor } from "@/components/editor/rich-editor";
+import { HtmlNoteEditor } from "@/components/editor/html-note-editor";
 import { LivePreview } from "@/components/editor/live-preview";
 import { blocksToHtml, htmlToBlocks } from "@/lib/editor/block-converter";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -263,21 +263,21 @@ function EditContent() {
         <div className="p-4 rounded-xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] text-xs text-[#2D2926] dark:text-[#E3DFD7] flex items-start gap-3 shadow-sm">
           <Sparkles className="w-4 h-4 text-[#A85D44] dark:text-[#C4785E] mt-0.5 shrink-0" />
           <div className="leading-relaxed">
-            <strong>Authoring Controls:</strong> Highlight text to reveal inline formatting. Type <kbd className="rounded border border-[#E8E3D9] dark:border-[#33312E] bg-[#EFEBE3] dark:bg-[#292825] px-1 py-0.5 font-mono text-[11px]">/</kbd> on an empty line for quick insertion of headings, mathematical formulas, callouts, and syntax-highlighted code blocks.
+            <strong>Pure HTML Authoring:</strong> Write raw HTML with full styling control. Use the top snippet toolbar to quickly insert standard headings, math formulas, tables, callouts, and workbook components.
           </div>
         </div>
 
         {/* Dynamic View Modes: Editor | Split | Reader Preview */}
         {editorViewMode === "split" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            <RichEditor initialHtml={html} onChange={(newHtml) => setHtml(newHtml)} />
+            <HtmlNoteEditor value={html} onChange={setHtml} />
             <LivePreview html={html} noteTitle={noteTitle || note.title} />
           </div>
         )}
 
         {editorViewMode === "editor" && (
           <div className="max-w-4xl mx-auto">
-            <RichEditor initialHtml={html} onChange={(newHtml) => setHtml(newHtml)} />
+            <HtmlNoteEditor value={html} onChange={setHtml} />
           </div>
         )}
 

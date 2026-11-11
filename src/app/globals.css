@@ -434,6 +434,15 @@ code, pre {
     box-shadow: none !important;
   }
 
+  /* Sandboxed HTML Viewer Print Overrides */
+  .html-sandboxed-viewer-host {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
   /* Hide print buttons and screen-only controls */
   .no-print,
   [data-print-hidden="true"] {
@@ -453,6 +462,256 @@ code, pre {
 .dark .notebook-ruled-lines {
   background-image: repeating-linear-gradient(transparent, transparent 27px, #33312E 28px);
   line-height: 28px;
+}
+
+/* ==========================================================================
+   Pure HTML Educational Components Styling
+   ========================================================================== */
+
+/* Callouts */
+.callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-radius: 0.875rem;
+  margin: 1.5rem 0;
+  border: 1px solid var(--callout-border, #E8E3D9);
+  background-color: var(--callout-bg, #F7F4EB);
+  break-inside: avoid;
+}
+.callout-icon {
+  font-size: 1.15rem;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.callout-body {
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: var(--foreground);
+}
+
+/* Pinned Note / Takeaway */
+.pinned-note {
+  margin: 1.75rem 0;
+  border-radius: 1rem;
+  background-color: #FEF9E7;
+  border: 1px solid #F6E05E;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  break-inside: avoid;
+}
+.dark .pinned-note {
+  background-color: #2A261A;
+  border-color: rgba(180, 130, 40, 0.4);
+}
+.pinned-header {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #975A16;
+  margin-bottom: 0.5rem;
+}
+.dark .pinned-header {
+  color: #F6E05E;
+}
+.pinned-content {
+  font-size: 0.9375rem;
+  font-style: italic;
+  line-height: 1.65;
+  color: #2D2926;
+}
+.dark .pinned-content {
+  color: #E3DFD7;
+}
+
+/* Concept Cards Grid */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin: 1.75rem 0;
+  break-inside: avoid;
+}
+.concept-card {
+  padding: 1rem 1.25rem;
+  border-radius: 0.875rem;
+  border: 1px solid #E8E3D9;
+  background-color: white;
+  transition: all 0.2s ease;
+}
+.dark .concept-card {
+  background-color: #201E1D;
+  border-color: #33312E;
+}
+.concept-card h4 {
+  font-size: 0.875rem;
+  font-weight: 700;
+  margin: 0.25rem 0 0.5rem 0;
+  color: var(--foreground);
+}
+.concept-card p {
+  font-size: 0.8125rem;
+  color: #757069;
+  margin: 0;
+  line-height: 1.5;
+}
+.dark .concept-card p {
+  color: #948F86;
+}
+.concept-card .card-fix {
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed #E8E3D9;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #5D7063;
+}
+.dark .concept-card .card-fix {
+  border-color: #33312E;
+  color: #768D7D;
+}
+.card-pitfall {
+  border-color: #FED7D7;
+  background-color: #FFF5F5;
+}
+.dark .card-pitfall {
+  border-color: #742A2A;
+  background-color: #2D1A1A;
+}
+.card-solution {
+  border-color: #C6F6D5;
+  background-color: #F0FFF4;
+}
+.dark .card-solution {
+  border-color: #22543D;
+  background-color: #172B20;
+}
+
+/* Process Flow */
+.process-flow {
+  margin: 1.75rem 0;
+  padding: 1.25rem;
+  border-radius: 1rem;
+  border: 1px solid #E8E3D9;
+  background-color: #FAF8F5;
+  break-inside: avoid;
+}
+.dark .process-flow {
+  background-color: #1E1C1B;
+  border-color: #33312E;
+}
+.process-flow h4 {
+  font-size: 0.875rem;
+  font-weight: 700;
+  margin: 0 0 1rem 0;
+  color: var(--foreground);
+}
+.flow-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.flow-step {
+  flex: 1 1 140px;
+  padding: 0.875rem;
+  border-radius: 0.75rem;
+  border: 1px solid #E8E3D9;
+  background-color: white;
+}
+.dark .flow-step {
+  background-color: #242220;
+  border-color: #33312E;
+}
+.flow-step.highlighted {
+  background-color: #FEF9E7;
+  border-color: #F6E05E;
+}
+.dark .flow-step.highlighted {
+  background-color: #2A261A;
+  border-color: rgba(180, 130, 40, 0.4);
+}
+.flow-step strong {
+  display: block;
+  font-size: 0.8125rem;
+  margin: 0.25rem 0;
+}
+.flow-step p {
+  font-size: 0.75rem;
+  color: #757069;
+  margin: 0;
+}
+.dark .flow-step p {
+  color: #948F86;
+}
+
+/* Your Note (Worksheet Reflection) */
+.your-note {
+  margin: 1.75rem 0;
+  padding: 1.25rem;
+  border-radius: 1rem;
+  border: 1px solid #E8E3D9;
+  background-color: #FAF8F5;
+  break-inside: avoid;
+}
+.dark .your-note {
+  background-color: #1E1C1B;
+  border-color: #33312E;
+}
+.note-header {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #5D7063;
+  margin-bottom: 0.5rem;
+}
+.dark .note-header {
+  color: #768D7D;
+}
+.note-prompt {
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-bottom: 1rem;
+  color: var(--foreground);
+}
+.rule-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+.rule-line {
+  border-bottom: 1px dashed #D5CEBF;
+  height: 1.25rem;
+}
+.dark .rule-line {
+  border-color: #3E3B37;
+}
+
+/* Tables in HTML notes */
+.note-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  font-size: 0.875rem;
+}
+.note-prose th,
+.note-prose td {
+  padding: 0.625rem 0.875rem;
+  border: 1px solid #E8E3D9;
+  text-align: left;
+}
+.dark .note-prose th,
+.dark .note-prose td {
+  border-color: #33312E;
+}
+.note-prose th {
+  background-color: #F5F2EB;
+  font-weight: 600;
+}
+.dark .note-prose th {
+  background-color: #252321;
 }
 
 
