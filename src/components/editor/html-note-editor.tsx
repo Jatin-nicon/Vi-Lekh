@@ -263,7 +263,7 @@ export function HtmlNoteEditor({
       className={`relative flex flex-col min-h-[550px] sm:min-h-[650px] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#1C1A19] shadow-sm overflow-hidden transition-colors ${className}`}
     >
       {/* Top Snippet & Formatting Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/80 dark:bg-[#22201E]/80 px-3 py-2 select-none shrink-0">
+      <div className="sticky top-16 z-20 flex flex-wrap items-center justify-between gap-2 border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/95 dark:bg-[#22201E]/95 backdrop-blur-xs px-3 py-2 select-none shrink-0">
         <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto max-w-full">
           {snippets.map((group, gIdx) => (
             <div key={group.group} className="flex items-center gap-1">

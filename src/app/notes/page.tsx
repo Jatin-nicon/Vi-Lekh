@@ -176,7 +176,7 @@ function NotesContent() {
           </div>
 
           {/* Note Reader Body */}
-          <main className="flex-1 min-w-0 bg-[#F5F2EB] dark:bg-[#181716] overflow-y-auto p-4 sm:p-6 print:overflow-visible print:h-auto print:w-full print:max-w-none print:p-0 print:m-0 print:block print:bg-white">
+          <main className="flex-1 min-w-0 bg-[#F5F2EB] dark:bg-[#181716] overflow-visible p-4 sm:p-6 print:overflow-visible print:h-auto print:w-full print:max-w-none print:p-0 print:m-0 print:block print:bg-white">
             {noteLoading ? (
               <div className="py-24 text-center text-xs text-[#757069]">
                 <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-[#A85D44]" />

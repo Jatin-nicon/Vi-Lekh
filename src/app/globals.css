@@ -434,13 +434,40 @@ code, pre {
     box-shadow: none !important;
   }
 
-  /* Sandboxed HTML Viewer Print Overrides */
+  /* Sandboxed HTML Viewer & SVG Annotation Print Overrides */
   .html-sandboxed-viewer-host {
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
     padding: 0 !important;
     overflow: visible !important;
+  }
+
+  svg.select-none {
+    overflow: visible !important;
+    max-width: 100% !important;
+  }
+
+  /* Annotation Text Box Print Overrides */
+  .annotation-text-box {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+  }
+  .annotation-text-box > div {
+    box-shadow: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    border-color: transparent !important;
+  }
+  .annotation-text-box textarea {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    resize: none !important;
+    overflow: hidden !important;
   }
 
   /* Hide print buttons and screen-only controls */
