@@ -12,6 +12,11 @@ import { Image as ImageIcon, Loader2 } from "lucide-react";
 import { uploadImage } from "@/lib/services/image-upload";
 import { Callout } from "./extensions/callout";
 import { NotionCodeBlockExtension } from "./extensions/notion-code-block";
+import { ProcessFlowExtension } from "./extensions/process-flow";
+import { YourNoteExtension } from "./extensions/your-note";
+import { CardGridExtension } from "./extensions/card-grid";
+import { PromptRoundExtension } from "./extensions/prompt-round";
+import { PinnedNoteExtension } from "./extensions/pinned-note";
 import { SlashCommand } from "./extensions/slash-command";
 import { EditorBubbleMenu } from "./bubble-menu";
 
@@ -83,6 +88,11 @@ export function RichEditor({
         },
       }),
       Callout,
+      ProcessFlowExtension,
+      YourNoteExtension,
+      CardGridExtension,
+      PromptRoundExtension,
+      PinnedNoteExtension,
       SlashCommand,
     ],
     content: initialHtml || "",

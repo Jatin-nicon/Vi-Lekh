@@ -2,24 +2,16 @@
 
 import React, { useState, useEffect, useCallback, Suspense } from "react";
 import { notesService } from "@/lib/data/notes-service";
-import { useAuth, AuthProvider } from "@/lib/auth/auth-context";
+import { AuthProvider } from "@/lib/auth/auth-context";
 import { CourseSidebar } from "@/components/navigation/course-sidebar";
 import { NoteReader } from "@/components/reader/note-reader";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/auth/user-menu";
-import { CreateCourseModal } from "@/components/modals/create-course-modal";
-import { CreateNoteModal } from "@/components/modals/create-note-modal";
-import { CreateModuleModal } from "@/components/modals/create-module-modal";
-import { CourseAccessModal } from "@/components/modals/course-access-modal";
-import { extractErrorMessage } from "@/lib/utils";
 import type { Course, Module, Note, Revision } from "@/lib/supabase/types";
 import { 
-  GitPullRequest, 
   BookOpen,
-  Plus,
   Loader2,
-  Sparkles,
-  FileText
+  Sparkles
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -28,7 +20,7 @@ function NotesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const courseParam = searchParams.get("course");
-  const { user, isSuperAdmin } = useAuth();
+  const noteParam = searchParams.get("note");
 
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
@@ -36,30 +28,16 @@ function NotesContent() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeNote, setActiveNote] = useState<Note | null>(null);
   const [activeRevision, setActiveRevision] = useState<Revision | null>(null);
-  const [pendingCount, setPendingCount] = useState<number>(0);
 
   const [loading, setLoading] = useState(true);
   const [noteLoading, setNoteLoading] = useState(false);
 
-  // Modals state
-  const [isCreateCourseOpen, setIsCreateCourseOpen] = useState(false);
-  const [isCreateNoteOpen, setIsCreateNoteOpen] = useState(false);
-  const [isCreateModuleOpen, setIsCreateModuleOpen] = useState(false);
-  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
-
-  const [courseRole, setCourseRole] = useState<string>("viewer");
-
-  // 1. Initial Load of Courses & Pending Revisions
+  // 1. Initial Load of Courses
   const loadInitialData = useCallback(async () => {
     try {
       setLoading(true);
-      const [coursesList, pendingRevs] = await Promise.all([
-        notesService.getCourses(),
-        notesService.getPendingRevisions().catch(() => []),
-      ]);
-
+      const coursesList = await notesService.getCourses();
       setCourses(coursesList);
-      setPendingCount(pendingRevs.length);
 
       if (coursesList.length > 0) {
         const found = courseParam 
@@ -94,45 +72,8 @@ function NotesContent() {
     loadInitialData();
   }, [loadInitialData]);
 
-  // 2. Load Modules and Notes when Selected Course Changes
-  const loadCourseData = useCallback(async (course: Course) => {
-    try {
-      const [{ modules: m, notes: n }, role] = await Promise.all([
-        notesService.getCourseWithModulesAndNotes(course.id),
-        notesService.getUserCourseRole(course.id, course.created_by).catch(() => "viewer"),
-      ]);
-      setModules(m);
-      setNotes(n);
-      setCourseRole(role);
-
-      if (n.length > 0) {
-        loadNoteData(n[0].id);
-      } else {
-        setActiveNote(null);
-        setActiveRevision(null);
-      }
-    } catch (err) {
-      console.error("Error loading course data:", err);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (selectedCourse) {
-      loadCourseData(selectedCourse);
-    }
-  }, [selectedCourse, loadCourseData]);
-
-  useEffect(() => {
-    if (selectedCourse) {
-      notesService
-        .getUserCourseRole(selectedCourse.id, selectedCourse.created_by)
-        .then(setCourseRole)
-        .catch(() => setCourseRole("viewer"));
-    }
-  }, [selectedCourse, user]);
-
-  // 3. Load Active Note and its Active Revision
-  const loadNoteData = async (noteId: string) => {
+  // 2. Load Active Note and its Active Revision
+  const loadNoteData = useCallback(async (noteId: string) => {
     try {
       setNoteLoading(true);
       const { note, currentRevision } = await notesService.getNote(noteId);
@@ -143,119 +84,38 @@ function NotesContent() {
     } finally {
       setNoteLoading(false);
     }
-  };
+  }, []);
 
-  const handleCourseCreated = (newCourse: Course) => {
-    setCourses((prev) => [...prev, newCourse]);
-    setSelectedCourse(newCourse);
-    router.replace(`/notes?course=${newCourse.id}`, { scroll: false });
-  };
-
-  const handleNoteCreated = (newNote: Note) => {
-    setNotes((prev) => [...prev, newNote]);
-    loadNoteData(newNote.id);
-  };
-
-  const handleModuleCreated = (newMod: Module) => {
-    setModules((prev) => [...prev, newMod]);
-  };
-
-  const handleDeleteCourse = async (course: Course) => {
-    if (
-      !confirm(
-        `Are you sure you want to permanently delete course "${course.title}"?\n\nThis will remove all associated modules, notes, and revisions.`
-      )
-    ) {
-      return;
-    }
-
+  // 3. Load Modules and Notes when Selected Course Changes
+  const loadCourseData = useCallback(async (course: Course) => {
     try {
-      setLoading(true);
-      await notesService.deleteCourse(course.id);
-      const remaining = courses.filter((c) => c.id !== course.id);
-      setCourses(remaining);
-      if (remaining.length > 0) {
-        setSelectedCourse(remaining[0]);
-        router.replace(`/notes?course=${remaining[0].id}`, { scroll: false });
+      const { modules: m, notes: n } = await notesService.getCourseWithModulesAndNotes(course.id);
+      setModules(m);
+      setNotes(n);
+
+      if (n.length > 0) {
+        // If noteParam is present and belongs to this course, select it
+        const targetNote = noteParam ? n.find((item) => item.id === noteParam || item.slug === noteParam) : null;
+        loadNoteData(targetNote ? targetNote.id : n[0].id);
       } else {
-        setSelectedCourse(null);
-        setModules([]);
-        setNotes([]);
         setActiveNote(null);
         setActiveRevision(null);
-        router.replace("/notes", { scroll: false });
       }
     } catch (err) {
-      alert(extractErrorMessage(err));
-    } finally {
-      setLoading(false);
+      console.error("Error loading course data:", err);
     }
-  };
+  }, [noteParam, loadNoteData]);
 
-  const handleUpdateModule = async (mod: Module, newTitle: string) => {
-    try {
-      const updated = await notesService.updateModule(mod.id, { title: newTitle });
-      setModules((prev) => prev.map((m) => (m.id === mod.id ? updated : m)));
-    } catch (err: unknown) {
-      alert(extractErrorMessage(err));
+  useEffect(() => {
+    if (selectedCourse) {
+      loadCourseData(selectedCourse);
     }
-  };
-
-  const handleUpdateNote = async (note: Note, newTitle: string) => {
-    try {
-      const updated = await notesService.updateNote(note.id, { title: newTitle });
-      setNotes((prev) => prev.map((n) => (n.id === note.id ? updated : n)));
-      if (activeNote?.id === note.id) {
-        setActiveNote(updated);
-      }
-    } catch (err: unknown) {
-      alert(extractErrorMessage(err));
-    }
-  };
-
-  const handleDeleteModule = async (mod: Module) => {
-    if (
-      !confirm(
-        `Are you sure you want to delete module "${mod.title}"?\n\nNotes belonging to this module will be unassigned.`
-      )
-    ) {
-      return;
-    }
-
-    try {
-      await notesService.deleteModule(mod.id);
-      setModules((prev) => prev.filter((m) => m.id !== mod.id));
-    } catch (err) {
-      alert(extractErrorMessage(err));
-    }
-  };
-
-  const handleDeleteNote = async (note: Note) => {
-    if (!confirm(`Are you sure you want to delete note "${note.title}"?`)) {
-      return;
-    }
-
-    try {
-      await notesService.deleteNote(note.id);
-      const remaining = notes.filter((n) => n.id !== note.id);
-      setNotes(remaining);
-      if (activeNote?.id === note.id) {
-        if (remaining.length > 0) {
-          loadNoteData(remaining[0].id);
-        } else {
-          setActiveNote(null);
-          setActiveRevision(null);
-        }
-      }
-    } catch (err) {
-      alert(extractErrorMessage(err));
-    }
-  };
+  }, [selectedCourse, loadCourseData]);
 
   return (
-    <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] flex flex-col font-sans transition-colors">
+    <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] flex flex-col font-sans transition-colors print:min-h-0 print:bg-white print:text-black">
       {/* Top Navbar */}
-      <header className="h-16 border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/95 dark:bg-[#181716]/95 backdrop-blur sticky top-0 z-40 px-4 sm:px-6">
+      <header className="h-16 border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/95 dark:bg-[#181716]/95 backdrop-blur sticky top-0 z-40 px-4 sm:px-6 print:hidden">
         <div className="max-w-7xl mx-auto h-full flex items-center justify-between">
           {/* Logo & Brand */}
           <div className="flex items-center gap-3">
@@ -282,19 +142,6 @@ function NotesContent() {
               <span>All Courses</span>
             </Link>
 
-            <Link
-              href="/reviews"
-              className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors"
-            >
-              <GitPullRequest className="w-3.5 h-3.5 text-[#A85D44] dark:text-[#C4785E]" />
-              <span>Reviews</span>
-              {pendingCount > 0 && (
-                <span className="w-4 h-4 rounded-full bg-[#A85D44] text-white text-[10px] font-bold flex items-center justify-center">
-                  {pendingCount}
-                </span>
-              )}
-            </Link>
-
             <div className="flex items-center gap-2 pl-2 border-l border-[#E8E3D9] dark:border-[#33312E]">
               <ThemeToggle />
               <UserMenu />
@@ -310,37 +157,26 @@ function NotesContent() {
           <span className="text-sm">Connecting to curriculum database...</span>
         </div>
       ) : (
-        <div className="flex-1 max-w-7xl mx-auto w-full flex flex-col md:flex-row">
-          {/* Course Syllabus Sidebar */}
-          <CourseSidebar
-            courses={courses}
-            selectedCourse={selectedCourse}
-            onSelectCourse={(c) => {
-              setSelectedCourse(c);
-              router.replace(`/notes?course=${c.id}`, { scroll: false });
-            }}
-            modules={modules}
-            notes={notes}
-            activeNoteId={activeNote?.id}
-            onSelectNote={(n) => loadNoteData(n.id)}
-            onAddCourse={() => setIsCreateCourseOpen(true)}
-            onDeleteCourse={handleDeleteCourse}
-            onAddNote={() => setIsCreateNoteOpen(true)}
-            onAddModule={() => setIsCreateModuleOpen(true)}
-            onUpdateModule={handleUpdateModule}
-            onDeleteModule={handleDeleteModule}
-            onUpdateNote={handleUpdateNote}
-            onDeleteNote={handleDeleteNote}
-            pendingCount={pendingCount}
-            canManageAccess={Boolean(
-              isSuperAdmin ||
-              (selectedCourse && (selectedCourse.created_by === user?.uid || courseRole === "admin" || courseRole === "editor"))
-            )}
-            onManageAccess={() => setIsAccessModalOpen(true)}
-          />
+        <div className="flex-1 max-w-7xl mx-auto w-full flex flex-col md:flex-row print:max-w-none print:w-full print:block print:p-0 print:m-0">
+          {/* Pure Read-Only Course Syllabus Sidebar */}
+          <div className="print:hidden">
+            <CourseSidebar
+              courses={courses}
+              selectedCourse={selectedCourse}
+              onSelectCourse={(c) => {
+                setSelectedCourse(c);
+                router.replace(`/notes?course=${c.id}`, { scroll: false });
+              }}
+              modules={modules}
+              notes={notes}
+              activeNoteId={activeNote?.id}
+              onSelectNote={(n) => loadNoteData(n.id)}
+              readOnly={true}
+            />
+          </div>
 
           {/* Note Reader Body */}
-          <main className="flex-1 min-w-0 bg-[#F5F2EB] dark:bg-[#181716] overflow-y-auto p-4 sm:p-6">
+          <main className="flex-1 min-w-0 bg-[#F5F2EB] dark:bg-[#181716] overflow-y-auto p-4 sm:p-6 print:overflow-visible print:h-auto print:w-full print:max-w-none print:p-0 print:m-0 print:block print:bg-white">
             {noteLoading ? (
               <div className="py-24 text-center text-xs text-[#757069]">
                 <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-[#A85D44]" />
@@ -351,7 +187,6 @@ function NotesContent() {
                 note={activeNote}
                 revision={activeRevision}
                 courseTitle={selectedCourse?.title || "Curriculum"}
-                onProposeEdit={() => router.push(`/edit?note=${activeNote.id}`)}
               />
             ) : selectedCourse ? (
               /* Course exists, but no notes created yet */
@@ -360,74 +195,22 @@ function NotesContent() {
                 <h3 className="text-lg font-bold text-[#2D2926] dark:text-[#E3DFD7] mb-1">
                   {selectedCourse.title}
                 </h3>
-                <p className="text-xs text-[#757069] dark:text-[#948F86] mb-6 max-w-md mx-auto">
-                  {selectedCourse.description}
+                <p className="text-xs text-[#757069] dark:text-[#948F86] max-w-md mx-auto">
+                  {selectedCourse.description || "No lecture notes have been published for this course yet."}
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setIsCreateNoteOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#A85D44] text-white text-xs font-semibold hover:bg-[#8F4C35] transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Create First Note</span>
-                </button>
               </div>
             ) : (
               /* No courses in database */
               <div className="max-w-md mx-auto my-16 p-8 text-center bg-[#FAF8F5] dark:bg-[#21201E] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E]">
                 <Sparkles className="w-8 h-8 text-[#A85D44] mx-auto mb-3" />
                 <h3 className="text-base font-bold mb-1">No Courses Found</h3>
-                <p className="text-xs text-[#757069] dark:text-[#948F86] mb-4">
-                  Get started by creating your first academic course curriculum.
+                <p className="text-xs text-[#757069] dark:text-[#948F86]">
+                  No academic curriculums are currently available.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setIsCreateCourseOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#A85D44] text-white text-xs font-semibold hover:bg-[#8F4C35] transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Create First Course</span>
-                </button>
               </div>
             )}
           </main>
         </div>
-      )}
-
-      {/* Creation Modals */}
-      <CreateCourseModal
-        isOpen={isCreateCourseOpen}
-        onClose={() => setIsCreateCourseOpen(false)}
-        onCourseCreated={handleCourseCreated}
-      />
-
-      {selectedCourse && (
-        <CreateModuleModal
-          isOpen={isCreateModuleOpen}
-          onClose={() => setIsCreateModuleOpen(false)}
-          courseId={selectedCourse.id}
-          courseTitle={selectedCourse.title}
-          existingCount={modules.length}
-          onModuleCreated={handleModuleCreated}
-        />
-      )}
-
-      {selectedCourse && (
-        <CreateNoteModal
-          isOpen={isCreateNoteOpen}
-          onClose={() => setIsCreateNoteOpen(false)}
-          courseId={selectedCourse.id}
-          modules={modules}
-          onNoteCreated={handleNoteCreated}
-        />
-      )}
-
-      {selectedCourse && (
-        <CourseAccessModal
-          isOpen={isAccessModalOpen}
-          onClose={() => setIsAccessModalOpen(false)}
-          course={selectedCourse}
-        />
       )}
     </div>
   );
@@ -447,4 +230,3 @@ export default function NotesPage() {
     </AuthProvider>
   );
 }
-

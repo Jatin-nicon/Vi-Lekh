@@ -347,3 +347,113 @@ code, pre {
   color: #FF8F87;
 }
 
+/* ==========================================================================
+   Clean Academic Print Stylesheet (@media print)
+   ========================================================================== */
+
+@page {
+  margin: 15mm 20mm;
+  size: auto;
+}
+
+@media print {
+  /* Enforce clean white background and dark high-contrast ink */
+  body,
+  :root,
+  .dark {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    color: #111111 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Reset viewport constraints and canvas backgrounds */
+  html,
+  body {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  /* Print Sheet Overrides */
+  .print-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    padding: 0 !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+  }
+
+  /* Page Break Rules: Avoid orphan headers at page bottom */
+  h1, h2, h3, h4, h5, h6 {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    color: #111111 !important;
+  }
+
+  /* Math Containers: Avoid breaking mid-equation */
+  .katex-display,
+  .katex {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Code Blocks: Avoid split across pages & wrap long lines without clipping */
+  pre,
+  .notion-code-block,
+  .notion-code-block-editor {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+    background-color: #fbfbfb !important;
+    border: 1px solid #dcdcdc !important;
+    box-shadow: none !important;
+  }
+
+  /* Callout Boxes: Avoid breaking inside and provide crisp hairline border */
+  .callout,
+  [class*="callout"] {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Workbook Pedagogical Blocks Print Overrides */
+  [data-type="process-flow"],
+  [data-type="your-note"],
+  [data-type="card-grid"],
+  [data-type="prompt-round"],
+  [data-type="pinned-note"] {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    box-shadow: none !important;
+  }
+
+  /* Hide print buttons and screen-only controls */
+  .no-print,
+  [data-print-hidden="true"] {
+    display: none !important;
+  }
+}
+
+/* ==========================================================================
+   Pedagogical Workbook Rules (Screen)
+   ========================================================================== */
+
+.notebook-ruled-lines {
+  background-image: repeating-linear-gradient(transparent, transparent 27px, #E8E3D9 28px);
+  line-height: 28px;
+}
+
+.dark .notebook-ruled-lines {
+  background-image: repeating-linear-gradient(transparent, transparent 27px, #33312E 28px);
+  line-height: 28px;
+}
+
+
+

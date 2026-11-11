@@ -3,17 +3,30 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { AuthModal } from "@/components/auth/auth-modal";
+import { checkStudioAccess } from "@/lib/auth/roles";
 import { 
   LogIn, 
   LogOut, 
-  ChevronDown 
+  ChevronDown,
+  LayoutDashboard
 } from "lucide-react";
+import Link from "next/link";
 
 export function UserMenu() {
   const { user, profile, isSuperAdmin, signOut } = useAuth();
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [canAccessStudio, setCanAccessStudio] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+
+  // Check Studio access whenever user changes
+  useEffect(() => {
+    if (user) {
+      checkStudioAccess(user).then(setCanAccessStudio);
+    } else {
+      setCanAccessStudio(false);
+    }
+  }, [user]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -26,6 +39,12 @@ export function UserMenu() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  const roleLabel = isSuperAdmin 
+    ? "Super Admin" 
+    : canAccessStudio 
+    ? "Course Editor" 
+    : "Reader";
+
   return (
     <>
       <div className="relative" ref={menuRef}>
@@ -37,6 +56,7 @@ export function UserMenu() {
             className="flex items-center gap-2 p-1.5 pr-2.5 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] dark:hover:bg-[#292825] transition-colors text-xs font-medium"
           >
             {profile?.avatar_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={profile.avatar_url}
                 alt={profile.display_name}
@@ -51,7 +71,7 @@ export function UserMenu() {
               {profile?.display_name}
             </span>
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#A85D44]/15 text-[#A85D44] dark:text-[#C4785E] font-semibold uppercase">
-              {isSuperAdmin ? "Super Admin" : profile?.role === "core_team" ? "Core Team" : "Contributor"}
+              {roleLabel}
             </span>
             <ChevronDown className="w-3.5 h-3.5 text-[#757069]" />
           </button>
@@ -75,10 +95,24 @@ export function UserMenu() {
               <p className="text-[11px] text-[#757069] dark:text-[#948F86] truncate">{user.email}</p>
               <div className="mt-1">
                 <span className="inline-block text-[10px] px-1.5 py-0.2 rounded bg-[#A85D44]/10 text-[#A85D44] dark:text-[#C4785E] font-semibold">
-                  {isSuperAdmin ? "Role: Super Admin" : profile?.role === "core_team" ? "Role: Core Team" : "Role: Contributor"}
+                  {roleLabel}
                 </span>
               </div>
             </div>
+
+            {/* Creator Studio Link (Only for Super Admin or Course Editors) */}
+            {canAccessStudio && (
+              <div className="py-1 border-b border-[#E8E3D9] dark:border-[#33312E] mb-1">
+                <Link
+                  href="/studio"
+                  onClick={() => setIsMenuOpen(false)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[#2D2926] dark:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#292825] text-xs font-semibold transition-colors text-left"
+                >
+                  <LayoutDashboard className="w-3.5 h-3.5 text-[#A85D44] dark:text-[#C4785E]" />
+                  <span>Creator Studio</span>
+                </Link>
+              </div>
+            )}
 
             {/* Sign Out */}
             <button
@@ -101,4 +135,3 @@ export function UserMenu() {
     </>
   );
 }
-

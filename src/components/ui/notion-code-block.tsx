@@ -72,7 +72,7 @@ export function NotionCodeBlock({
         </div>
 
         {/* Action Controls */}
-        <div className="flex items-center gap-1 text-[11px]">
+        <div className="flex items-center gap-1 text-[11px] print:hidden">
           {/* Toggle Line Numbers */}
           <button
             type="button"

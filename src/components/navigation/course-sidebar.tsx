@@ -28,9 +28,9 @@ interface CourseSidebarProps {
   notes: Note[];
   activeNoteId?: string;
   onSelectNote: (note: Note) => void;
-  onAddCourse: () => void;
+  onAddCourse?: () => void;
   onDeleteCourse?: (course: Course) => void;
-  onAddNote: () => void;
+  onAddNote?: () => void;
   onAddModule?: () => void;
   onUpdateModule?: (module: Module, newTitle: string) => void;
   onDeleteModule?: (module: Module) => void;
@@ -39,6 +39,7 @@ interface CourseSidebarProps {
   pendingCount?: number;
   canManageAccess?: boolean;
   onManageAccess?: () => void;
+  readOnly?: boolean;
 }
 
 export function CourseSidebar({
@@ -60,6 +61,7 @@ export function CourseSidebar({
   pendingCount = 0,
   canManageAccess = false,
   onManageAccess,
+  readOnly = false,
 }: CourseSidebarProps) {
   const [collapsedModules, setCollapsedModules] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState("");
@@ -92,7 +94,7 @@ export function CourseSidebar({
             <span>{selectedCourse?.domain || "Academic Curriculum"}</span>
           </div>
           <div className="flex items-center gap-1">
-            {canManageAccess && selectedCourse && (
+            {!readOnly && canManageAccess && selectedCourse && (
               <>
                 <button
                   type="button"
@@ -114,14 +116,16 @@ export function CourseSidebar({
                 )}
               </>
             )}
-            <button
-              type="button"
-              onClick={onAddCourse}
-              title="Create new course"
-              className="p-1 rounded hover:bg-[#EFEBE3] dark:hover:bg-[#292825] text-[#757069] dark:text-[#948F86] transition-colors"
-            >
-              <Plus className="w-4 h-4 text-[#A85D44] dark:text-[#C4785E]" />
-            </button>
+            {!readOnly && onAddCourse && (
+              <button
+                type="button"
+                onClick={onAddCourse}
+                title="Create new course"
+                className="p-1 rounded hover:bg-[#EFEBE3] dark:hover:bg-[#292825] text-[#757069] dark:text-[#948F86] transition-colors"
+              >
+                <Plus className="w-4 h-4 text-[#A85D44] dark:text-[#C4785E]" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -222,14 +226,16 @@ export function CourseSidebar({
               className="w-full text-xs pl-8 pr-3 py-1.5 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] text-[#2D2926] dark:text-[#E3DFD7] placeholder:text-[#757069]/70 outline-none focus:border-[#A85D44]"
             />
           </div>
-          <button
-            type="button"
-            onClick={onAddNote}
-            title="Create note in this course"
-            className="p-1.5 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-[#A85D44] dark:text-[#C4785E] transition-colors"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
+          {!readOnly && onAddNote && (
+            <button
+              type="button"
+              onClick={onAddNote}
+              title="Create note in this course"
+              className="p-1.5 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-[#A85D44] dark:text-[#C4785E] transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       )}
 
@@ -240,7 +246,7 @@ export function CourseSidebar({
             <span className="text-[10px] font-bold uppercase tracking-wider text-[#757069] dark:text-[#948F86]">
               Modules & Notes
             </span>
-            {canManageAccess && onAddModule && (
+            {!readOnly && canManageAccess && onAddModule && (
               <button
                 type="button"
                 onClick={onAddModule}

@@ -17,7 +17,7 @@ export interface PendingRevisionItem extends Revision {
   author?: Profile;
 }
 
-const SUPER_ADMIN_EMAIL = (
+export const SUPER_ADMIN_EMAIL = (
   process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL || "jatinkumar79911@gmail.com"
 ).toLowerCase();
 
@@ -176,7 +176,7 @@ export const notesService = {
   },
 
   /**
-   * Creates a new course
+   * Creates a new course (Restricted strictly to Super Admin)
    */
   async createCourse(course: {
     title: string;
@@ -187,6 +187,10 @@ export const notesService = {
   }) {
     const supabase = createClient();
     const user = getFirebaseUser();
+    const isSuperAdmin = (user.email || "").toLowerCase() === SUPER_ADMIN_EMAIL;
+    if (!isSuperAdmin) {
+      throw new Error("Only the Super Admin can create courses.");
+    }
     await syncProfile(supabase, user);
 
     const { data, error } = await supabase
@@ -712,5 +716,203 @@ export const notesService = {
       .eq("id", memberId);
 
     if (error) throw error;
+  },
+
+  /**
+   * Removes a member by course ID and user ID
+   */
+  async removeCourseEditor(courseId: string, userId: string): Promise<void> {
+    const supabase = createClient();
+    const { error } = await supabase
+      .from("course_members")
+      .delete()
+      .eq("course_id", courseId)
+      .eq("user_id", userId);
+
+    if (error) throw error;
+  },
+
+  /**
+   * Fetches only the courses the user is authorized to edit in Creator Studio:
+   * - Super Admin gets all courses
+   * - Course Editors get courses where they have 'admin' or 'editor' role in course_members
+   */
+  async getUserEditableCourses(userId?: string): Promise<CourseWithStats[]> {
+    const user = auth.currentUser;
+    const currentUid = userId || user?.uid;
+    if (!currentUid) return [];
+
+    const isSuperAdmin = (user?.email || "").toLowerCase() === SUPER_ADMIN_EMAIL;
+    const allCourses = await this.getCoursesWithDetails();
+    if (isSuperAdmin) {
+      return allCourses;
+    }
+
+    const supabase = createClient();
+    const { data: memberships, error } = await supabase
+      .from("course_members")
+      .select("course_id, role")
+      .eq("user_id", currentUid);
+
+    if (error) throw error;
+    const editableCourseIds = new Set(
+      (memberships || [])
+        .filter((m) => m.role === "admin" || m.role === "editor")
+        .map((m) => m.course_id)
+    );
+
+    return allCourses.filter((course) => editableCourseIds.has(course.id) || course.created_by === currentUid);
+  },
+
+  /**
+   * Evaluates if user can enter Creator Studio
+   */
+  async canUserAccessStudio(user?: { email?: string | null; uid?: string } | null): Promise<boolean> {
+    const activeUser = user || auth.currentUser;
+    if (!activeUser) return false;
+
+    if ((activeUser.email || "").toLowerCase() === SUPER_ADMIN_EMAIL) {
+      return true;
+    }
+
+    if (!activeUser.uid) return false;
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from("course_members")
+      .select("id, role")
+      .eq("user_id", activeUser.uid)
+      .in("role", ["admin", "editor"])
+      .limit(1);
+
+    if (error || !data) return false;
+    return data.length > 0;
+  },
+
+  /**
+   * Evaluates if user can edit a specific course
+   */
+  async canUserEditCourse(courseId: string, user?: { email?: string | null; uid?: string } | null): Promise<boolean> {
+    const activeUser = user || auth.currentUser;
+    if (!activeUser) return false;
+
+    if ((activeUser.email || "").toLowerCase() === SUPER_ADMIN_EMAIL) {
+      return true;
+    }
+
+    if (!activeUser.uid) return false;
+
+    const role = await this.getUserCourseRole(courseId);
+    return role === "admin" || role === "editor";
+  },
+
+  /**
+   * Resolves a registered user profile by email or username
+   */
+  async findProfileByEmail(email: string): Promise<Profile | null> {
+    const clean = email.trim().toLowerCase();
+    if (!clean) return null;
+
+    const supabase = createClient();
+    const usernamePrefix = clean.split("@")[0].replace(/[^a-z0-9]/g, "_");
+
+    // 1. Try matching exact username
+    const { data: byUsername } = await supabase
+      .from("profiles")
+      .select("*")
+      .ilike("username", usernamePrefix)
+      .maybeSingle();
+
+    if (byUsername) return byUsername as Profile;
+
+    // 2. Try matching display_name or username substring
+    const { data: candidates } = await supabase
+      .from("profiles")
+      .select("*")
+      .or(`username.ilike.%${usernamePrefix}%,display_name.ilike.%${usernamePrefix}%`)
+      .limit(1);
+
+    if (candidates && candidates.length > 0) {
+      return candidates[0] as Profile;
+    }
+
+    return null;
+  },
+
+  /**
+   * Adds an editor to a course by their email
+   */
+  async addCourseEditorByEmail(courseId: string, email: string): Promise<CourseMember> {
+    const profile = await this.findProfileByEmail(email);
+    if (!profile) {
+      throw new Error(
+        `User with identifier "${email}" was not found. Note that users must sign in to Vi-Lekh at least once before they can be added as editors.`
+      );
+    }
+
+    return await this.addCourseMember(courseId, profile.id, "editor");
+  },
+
+  /**
+   * Directly saves and publishes note updates (title & blocks) live without a review queue
+   */
+  async saveNoteDirect(data: {
+    noteId: string;
+    title: string;
+    blocks: NoteBlock[];
+    changeSummary?: string;
+  }): Promise<Note> {
+    const supabase = createClient();
+    const user = getFirebaseUser();
+    await syncProfile(supabase, user);
+
+    // 1. Fetch note to get course_id
+    const { data: note, error: noteError } = await supabase
+      .from("notes")
+      .select("id, course_id, current_revision_id")
+      .eq("id", data.noteId)
+      .single();
+    if (noteError || !note) throw new Error("Note not found.");
+
+    // 2. Verify authorization
+    const isSuperAdmin = (user.email || "").toLowerCase() === SUPER_ADMIN_EMAIL;
+    if (!isSuperAdmin) {
+      const role = await notesService.getUserCourseRole(note.course_id);
+      if (role !== "admin" && role !== "editor") {
+        throw new Error("You do not have permission to edit notes in this course.");
+      }
+    }
+
+    // 3. Create direct_publish revision
+    const { data: rev, error: revError } = await supabase
+      .from("revisions")
+      .insert({
+        note_id: data.noteId,
+        author_id: user.uid,
+        base_revision_id: note.current_revision_id || null,
+        blocks: data.blocks,
+        change_summary: data.changeSummary || "Direct publish from editor",
+        status: "direct_publish",
+      })
+      .select()
+      .single();
+    if (revError) throw revError;
+
+    // 4. Atomically update note title and current revision
+    const slug = data.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const { data: updatedNote, error: updateError } = await supabase
+      .from("notes")
+      .update({
+        title: data.title,
+        slug,
+        current_revision_id: rev.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", data.noteId)
+      .select()
+      .single();
+    if (updateError) throw updateError;
+
+    return updatedNote as Note;
   },
 };

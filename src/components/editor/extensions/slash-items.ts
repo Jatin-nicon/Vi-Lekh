@@ -180,5 +180,141 @@ export const getSlashCommands = (): SlashItem[] => [
       editor.chain().focus().deleteRange(range).setHorizontalRule().run();
     },
   },
+  {
+    title: "Process Flow",
+    description: "Horizontal step timeline with connector arrows",
+    icon: "➔",
+    category: "Workbook",
+    aliases: ["flow", "steps", "timeline", "process", "pipeline"],
+    command: ({ editor, range }) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({
+          type: "processFlow",
+          attrs: {
+            title: "★ Each generation hides a layer of hard work",
+            steps: [
+              { id: "1", icon: "🔌", title: "Switches & cards", description: "talk to the machine in its own code" },
+              { id: "2", icon: "⌨️", title: "Programming languages", description: "write rules in near-English" },
+              { id: "3", icon: "📦", title: "Ready-made blocks", description: "reuse what others wrote" },
+              { id: "4", icon: "💬", title: "Plain-language requests", description: "describe it; AI writes the code", highlighted: true },
+            ],
+          },
+        })
+        .run();
+    },
+  },
+  {
+    title: "Your Note",
+    description: "Student workbook reflection box with ruled lines",
+    icon: "✎",
+    category: "Workbook",
+    aliases: ["your-note", "yournote", "note-box", "reflection", "exercise"],
+    command: ({ editor, range }) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({
+          type: "yourNote",
+          attrs: {
+            prompt: "One task in your life that went from many steps to one tap...",
+            lines: 3,
+          },
+        })
+        .run();
+    },
+  },
+  {
+    title: "Concept Cards Grid",
+    description: "2-column grid for terms, pitfalls, and fixes",
+    icon: "⊞",
+    category: "Workbook",
+    aliases: ["cards", "grid", "antipattern", "terms", "concepts"],
+    command: ({ editor, range }) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({
+          type: "cardGrid",
+          attrs: {
+            cards: [
+              {
+                id: "c1",
+                icon: "🤷",
+                title: "Too vague",
+                accent: "pitfall",
+                content: '"Make it nice." Nice to whom?',
+                fix: "Fix: name one thing you can see or test.",
+                inOtherWords: "Leave no room for guessing.",
+              },
+              {
+                id: "c2",
+                icon: "🧳",
+                title: "Too much at once",
+                accent: "pitfall",
+                content: "Ten features in one message; three get done well.",
+                fix: "Fix: one feature per round.",
+                inOtherWords: "Work in small verifiable steps.",
+              },
+            ],
+          },
+        })
+        .run();
+    },
+  },
+  {
+    title: "Prompt Round",
+    description: "Evolution block showing You Ask vs You Get & Notice",
+    icon: "💬",
+    category: "Workbook",
+    aliases: ["round", "prompt-round", "dialogue", "turn", "iteration"],
+    command: ({ editor, range }) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({
+          type: "promptRound",
+          attrs: {
+            round: 1,
+            ask: '"Make me an expense app."',
+            notice: "A neat list for one person's spending. Nothing about sharing. You never said there were four of you.",
+          },
+        })
+        .run();
+    },
+  },
+  {
+    title: "Pinned Takeaway",
+    description: "Warm amber sticky note for core principles",
+    icon: "📌",
+    category: "Workbook",
+    aliases: ["pinned", "pin", "takeaway", "mantra", "quote"],
+    command: ({ editor, range }) => {
+      editor
+        .chain()
+        .focus()
+        .deleteRange(range)
+        .insertContent({
+          type: "pinnedNote",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "The AI writes the code. You write the wish. Getting good at this is not about magic words. It is about knowing what you want, saying it plainly, and checking what came back.",
+                },
+              ],
+            },
+          ],
+        })
+        .run();
+    },
+  },
 ];
 

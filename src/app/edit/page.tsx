@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, Suspense, useMemo } from "react";
 import { notesService } from "@/lib/data/notes-service";
 import { extractErrorMessage } from "@/lib/utils";
 import { useAuth, AuthProvider } from "@/lib/auth/auth-context";
+import { checkCourseEditAccess, isSuperAdmin as checkIsSuperAdmin } from "@/lib/auth/roles";
 import { RichEditor } from "@/components/editor/rich-editor";
 import { LivePreview } from "@/components/editor/live-preview";
 import { blocksToHtml, htmlToBlocks } from "@/lib/editor/block-converter";
@@ -18,7 +19,9 @@ import {
   AlertCircle,
   Columns2,
   Eye,
-  FileEdit
+  FileEdit,
+  ShieldCheck,
+  Crown
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -28,9 +31,11 @@ function EditContent() {
   const searchParams = useSearchParams();
   const noteId = searchParams.get("note");
 
-  const { user, isSuperAdmin, signInWithGoogle } = useAuth();
+  const { user, profile, isLoading: authLoading } = useAuth();
   const [note, setNote] = useState<Note | null>(null);
-  const [courseRole, setCourseRole] = useState<CourseRole>("contributor");
+  const [noteTitle, setNoteTitle] = useState("");
+  const [courseRole, setCourseRole] = useState<CourseRole>("viewer");
+  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null);
   const [html, setHtml] = useState<string>("");
   const [summary, setSummary] = useState("");
   const [editorViewMode, setEditorViewMode] = useState<"editor" | "split" | "preview">("split");
@@ -39,18 +44,21 @@ function EditContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function checkRole() {
-      if (note) {
-        const role = await notesService.getUserCourseRole(note.course_id);
-        setCourseRole(role);
-      }
-    }
-    checkRole();
-  }, [note, user, isSuperAdmin]);
+  const isSuper = useMemo(() => {
+    return checkIsSuperAdmin(user) || profile?.role === "super_admin";
+  }, [user, profile]);
 
+  // Load Note and Verify Authorization
   useEffect(() => {
-    async function loadNote() {
+    async function initEditor() {
+      if (authLoading) return;
+
+      if (!user) {
+        alert("Please sign in with an authorized editor account to access the editor.");
+        router.replace("/");
+        return;
+      }
+
       if (!noteId) {
         setLoading(false);
         return;
@@ -60,8 +68,18 @@ function EditContent() {
         setLoading(true);
         const { note: n, currentRevision: rev } = await notesService.getNote(noteId);
         setNote(n);
-        
-        // Resolve course-level role
+        setNoteTitle(n.title);
+
+        // Check Course-Level Authorization
+        const authorized = await checkCourseEditAccess(n.course_id, user);
+        setIsAuthorized(authorized);
+
+        if (!authorized) {
+          alert("You do not have permission to edit notes in this course.");
+          router.replace(`/notes?course=${n.course_id}`);
+          return;
+        }
+
         const role = await notesService.getUserCourseRole(n.course_id);
         setCourseRole(role);
 
@@ -92,37 +110,31 @@ function EditContent() {
       }
     }
 
-    loadNote();
-  }, [noteId]);
-
-  const canDirectPublish = Boolean(isSuperAdmin || courseRole === "admin" || courseRole === "editor");
+    initEditor();
+  }, [noteId, user, authLoading, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!note || !user) return;
+    if (!note || !user || !isAuthorized) return;
 
     setIsSubmitting(true);
     setError(null);
 
-    const changeSummary = summary.trim() || "Updated note content";
+    const changeSummary = summary.trim() || "Live update from editor";
 
     try {
       const blocks = htmlToBlocks(html);
-      await notesService.submitRevision({
-        note_id: note.id,
-        base_revision_id: note.current_revision_id || undefined,
+
+      // Direct Live Publishing
+      await notesService.saveNoteDirect({
+        noteId: note.id,
+        title: noteTitle.trim() || note.title,
         blocks,
-        change_summary: changeSummary,
-        isDirectPublish: canDirectPublish,
+        changeSummary,
       });
 
-      if (canDirectPublish) {
-        alert("Published immediately! The live note has been updated.");
-        router.push(`/notes?course=${note.course_id}`);
-      } else {
-        alert("Revision proposal submitted! Placed in the review queue for course maintainers.");
-        router.push("/reviews");
-      }
+      alert("Note updated and published live successfully!");
+      router.push(`/notes?course=${note.course_id}&note=${note.id}`);
     } catch (err: unknown) {
       setError(extractErrorMessage(err));
     } finally {
@@ -130,26 +142,26 @@ function EditContent() {
     }
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#F5F2EB] dark:bg-[#181716] text-[#757069]">
         <Loader2 className="w-6 h-6 animate-spin text-[#A85D44] mr-2" />
-        <span className="text-sm font-medium">Loading note editor...</span>
+        <span className="text-sm font-medium">Loading authorized note editor...</span>
       </div>
     );
   }
 
-  if (!noteId || !note) {
+  if (!noteId || !note || isAuthorized === false) {
     return (
-      <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] p-8 text-center">
-        <h2 className="text-lg font-bold mb-2">No note selected for editing</h2>
-        <p className="text-xs text-[#757069] mb-4">Please select a note from the syllabus to propose changes.</p>
+      <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] p-8 text-center flex flex-col items-center justify-center">
+        <h2 className="text-lg font-bold mb-2">Access Denied or Note Not Found</h2>
+        <p className="text-xs text-[#757069] mb-4">You do not have permission to edit this note, or the note does not exist.</p>
         <Link
-          href={note?.course_id ? `/notes?course=${note.course_id}` : "/notes"}
+          href={note?.course_id ? `/notes?course=${note.course_id}` : "/"}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#A85D44] text-white text-xs font-semibold"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Return to Notes</span>
+          <span>Return to Curriculum</span>
         </Link>
       </div>
     );
@@ -162,25 +174,33 @@ function EditContent() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
-              href={`/notes?course=${note.course_id}`}
+              href={`/studio`}
               className="p-1.5 rounded-lg hover:bg-[#EFEBE3] dark:hover:bg-[#292825] text-[#757069] dark:text-[#948F86] transition-colors"
-              title="Return to notes"
+              title="Return to Creator Studio"
             >
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div>
-              <span className="text-[10px] uppercase tracking-wider text-[#A85D44] dark:text-[#C4785E] font-bold block">
-                {isSuperAdmin 
-                  ? "Super Admin — Direct Edit Mode" 
-                  : canDirectPublish 
-                  ? "Permanent Editor — Direct Publish Mode" 
-                  : !user
-                  ? "Sign In to Suggest Edits"
-                  : "Contributor — Suggestion / Review Mode"}
-              </span>
-              <h1 className="text-sm font-semibold truncate max-w-xs sm:max-w-md text-[#2D2926] dark:text-[#E3DFD7]">
-                {note.title}
-              </h1>
+              <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold">
+                {isSuper ? (
+                  <span className="text-purple-600 dark:text-purple-400 inline-flex items-center gap-1">
+                    <Crown className="w-3 h-3" />
+                    Super Admin — Direct Publishing
+                  </span>
+                ) : (
+                  <span className="text-[#5D7063] dark:text-[#768D7D] inline-flex items-center gap-1">
+                    <ShieldCheck className="w-3 h-3" />
+                    Course Editor — Direct Publishing
+                  </span>
+                )}
+              </div>
+              <input
+                type="text"
+                value={noteTitle}
+                onChange={(e) => setNoteTitle(e.target.value)}
+                placeholder="Note Title"
+                className="text-sm font-semibold text-[#2D2926] dark:text-[#E3DFD7] bg-transparent border-none outline-none focus:underline w-full max-w-xs sm:max-w-md"
+              />
             </div>
           </div>
 
@@ -243,7 +263,7 @@ function EditContent() {
         <div className="p-4 rounded-xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] text-xs text-[#2D2926] dark:text-[#E3DFD7] flex items-start gap-3 shadow-sm">
           <Sparkles className="w-4 h-4 text-[#A85D44] dark:text-[#C4785E] mt-0.5 shrink-0" />
           <div className="leading-relaxed">
-            <strong>Pro Editor:</strong> Highlight any text to reveal the inline formatting menu (Bold, Italic, Link, Highlight, Code). Type <kbd className="rounded border border-[#E8E3D9] dark:border-[#33312E] bg-[#EFEBE3] dark:bg-[#292825] px-1 py-0.5 font-mono text-[11px]">/</kbd> on an empty line for quick insertion of headings, mathematical formulas, callouts, and code blocks.
+            <strong>Authoring Controls:</strong> Highlight text to reveal inline formatting. Type <kbd className="rounded border border-[#E8E3D9] dark:border-[#33312E] bg-[#EFEBE3] dark:bg-[#292825] px-1 py-0.5 font-mono text-[11px]">/</kbd> on an empty line for quick insertion of headings, mathematical formulas, callouts, and syntax-highlighted code blocks.
           </div>
         </div>
 
@@ -251,7 +271,7 @@ function EditContent() {
         {editorViewMode === "split" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
             <RichEditor initialHtml={html} onChange={(newHtml) => setHtml(newHtml)} />
-            <LivePreview html={html} noteTitle={note.title} />
+            <LivePreview html={html} noteTitle={noteTitle || note.title} />
           </div>
         )}
 
@@ -263,62 +283,44 @@ function EditContent() {
 
         {editorViewMode === "preview" && (
           <div className="max-w-4xl mx-auto">
-            <LivePreview html={html} noteTitle={note.title} />
+            <LivePreview html={html} noteTitle={noteTitle || note.title} />
           </div>
         )}
 
-        {/* Change Summary & Submit Box */}
+        {/* Change Summary & Direct Live Publish */}
         <form onSubmit={handleSubmit} className="max-w-4xl mx-auto p-6 rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] shadow-sm space-y-4">
           <h2 className="text-sm font-semibold tracking-wide text-[#2D2926] dark:text-[#E3DFD7]">
-            {canDirectPublish ? "Publish Note Update Directly (Permanent Editor)" : "Propose Revision to Course Maintainers"}
+            Publish Changes Directly to Live Note
           </h2>
           <div>
             <label htmlFor="summary" className="block text-xs font-medium text-[#757069] dark:text-[#948F86] mb-1.5">
-              Change Summary (explain what you changed and why)
+              Change Log Note (optional)
             </label>
             <input
               id="summary"
               type="text"
-              disabled={!user}
               value={summary}
               onChange={(e) => setSummary(e.target.value)}
-              placeholder="(Optional) e.g. Added derivation of gradient descent, inserted callouts, and corrected typography"
-              className="w-full text-xs sm:text-sm p-3 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-white dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] outline-none focus:border-[#A85D44] disabled:opacity-50"
+              placeholder="e.g. Added derivation of gradient descent and corrected syntax in code blocks"
+              className="w-full text-xs sm:text-sm p-3 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-white dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] outline-none focus:border-[#A85D44]"
             />
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
-            {!user ? (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-[#757069] dark:text-[#948F86]">
-                  🔒 Sign in with Google to propose and suggest edits for this note.
-                </span>
-                <button
-                  type="button"
-                  onClick={signInWithGoogle}
-                  className="px-3 py-1.5 rounded-lg bg-[#A85D44] text-white text-xs font-semibold hover:bg-[#8F4C35] transition-colors"
-                >
-                  Sign in with Google
-                </button>
-              </div>
-            ) : (
-              <span className="text-xs text-[#757069] dark:text-[#948F86]">
-                {canDirectPublish 
-                  ? "✓ Permanent Editor privilege: edits publish directly to live note." 
-                  : "ℹ️ Suggestion mode: your revision will be sent to the review queue for course maintainers."}
-              </span>
-            )}
+            <span className="text-xs text-[#757069] dark:text-[#948F86]">
+              ⚡ All updates are saved and published live immediately without peer review queues.
+            </span>
             <button
               type="submit"
-              disabled={isSubmitting || !user}
-              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] disabled:opacity-50 text-white text-xs sm:text-sm font-medium shadow-sm transition-colors"
+              disabled={isSubmitting}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] disabled:opacity-50 text-white text-xs sm:text-sm font-semibold shadow-sm transition-colors"
             >
               {isSubmitting ? (
-                <span>Submitting...</span>
+                <span>Publishing...</span>
               ) : (
                 <>
                   <Send className="w-4 h-4" />
-                  <span>{canDirectPublish ? "Publish Update Directly" : "Submit Suggestion for Review"}</span>
+                  <span>Publish Note to Live</span>
                 </>
               )}
             </button>

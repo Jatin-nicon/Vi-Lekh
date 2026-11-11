@@ -12,6 +12,7 @@ interface CreateNoteModalProps {
   onClose: () => void;
   courseId: string;
   modules: Module[];
+  defaultModuleId?: string;
   onNoteCreated: (note: Note) => void;
 }
 
@@ -20,10 +21,11 @@ export function CreateNoteModal({
   onClose,
   courseId,
   modules,
+  defaultModuleId,
   onNoteCreated,
 }: CreateNoteModalProps) {
   const [title, setTitle] = useState("");
-  const [moduleId, setModuleId] = useState(modules[0]?.id || "");
+  const [moduleId, setModuleId] = useState(defaultModuleId || modules[0]?.id || "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -32,10 +34,12 @@ export function CreateNoteModal({
     setMounted(true);
   }, []);
 
-  // Ensure selected moduleId always matches a currently existing module
+  // Ensure selected moduleId always matches a currently existing module or defaultModuleId
   useEffect(() => {
     if (isOpen) {
-      if (modules.length > 0) {
+      if (defaultModuleId && modules.some((m) => m.id === defaultModuleId)) {
+        setModuleId(defaultModuleId);
+      } else if (modules.length > 0) {
         const isCurrentValid = modules.some((m) => m.id === moduleId);
         if (!isCurrentValid) {
           setModuleId(modules[0].id);
@@ -44,7 +48,7 @@ export function CreateNoteModal({
         setModuleId("");
       }
     }
-  }, [isOpen, modules, moduleId]);
+  }, [isOpen, modules, moduleId, defaultModuleId]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

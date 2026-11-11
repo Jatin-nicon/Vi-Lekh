@@ -1,5 +1,26 @@
 import type { NoteBlock } from "@/lib/supabase/types";
 
+function safeEncode(val: unknown): string {
+  try {
+    return encodeURIComponent(JSON.stringify(val));
+  } catch {
+    return "";
+  }
+}
+
+function safeDecode<T>(val: string | null, fallback: T): T {
+  if (!val) return fallback;
+  try {
+    return JSON.parse(decodeURIComponent(val));
+  } catch {
+    try {
+      return JSON.parse(val);
+    } catch {
+      return fallback;
+    }
+  }
+}
+
 /**
  * Converts NoteBlock[] from database into rich HTML for TipTap editor
  */
@@ -36,6 +57,29 @@ export function blocksToHtml(blocks: NoteBlock[]): string {
         case "image": {
           const alt = (block.props?.alt as string) || "Note illustration";
           return `<img src="${block.content || ""}" alt="${alt}" />`;
+        }
+        case "flow": {
+          const encoded = safeEncode(block.props?.steps || []);
+          const title = (block.props?.title as string) || block.content || "";
+          return `<div data-type="process-flow" data-title="${encodeURIComponent(title)}" data-steps="${encoded}"><p>${title}</p></div>`;
+        }
+        case "your_note": {
+          const prompt = (block.props?.prompt as string) || block.content || "Your reflection prompt...";
+          const lines = Number(block.props?.lines) || 3;
+          return `<div data-type="your-note" data-prompt="${encodeURIComponent(prompt)}" data-lines="${lines}"><p>${prompt}</p></div>`;
+        }
+        case "card_grid": {
+          const encoded = safeEncode(block.props?.cards || []);
+          return `<div data-type="card-grid" data-cards="${encoded}"><p>${block.content || ""}</p></div>`;
+        }
+        case "round_dialogue": {
+          const round = Number(block.props?.round) || 1;
+          const ask = (block.props?.ask as string) || "";
+          const notice = (block.props?.notice as string) || "";
+          return `<div data-type="prompt-round" data-round="${round}" data-ask="${encodeURIComponent(ask)}" data-notice="${encodeURIComponent(notice)}"><p>Round ${round}</p></div>`;
+        }
+        case "pinned_note": {
+          return `<div data-type="pinned-note"><p>${block.content || ""}</p></div>`;
         }
         default:
           return `<p>${block.content || ""}</p>`;
@@ -140,6 +184,48 @@ export function htmlToBlocks(html: string): NoteBlock[] {
         type: "callout",
         content: el.textContent || "",
         props: { calloutType: "info" },
+      });
+    } else if (tagName === "div" && el.getAttribute("data-type") === "process-flow") {
+      const title = decodeURIComponent(el.getAttribute("data-title") || "");
+      const steps = safeDecode(el.getAttribute("data-steps"), []);
+      blocks.push({
+        id,
+        type: "flow",
+        content: title || el.querySelector("p")?.textContent || el.textContent || "",
+        props: { title, steps },
+      });
+    } else if (tagName === "div" && (el.getAttribute("data-type") === "your-note" || el.getAttribute("data-type") === "workbook-note")) {
+      const prompt = decodeURIComponent(el.getAttribute("data-prompt") || "") || el.querySelector("p")?.textContent || el.textContent || "Your reflection note...";
+      const lines = parseInt(el.getAttribute("data-lines") || "3", 10);
+      blocks.push({
+        id,
+        type: "your_note",
+        content: prompt,
+        props: { prompt, lines },
+      });
+    } else if (tagName === "div" && el.getAttribute("data-type") === "card-grid") {
+      const cards = safeDecode(el.getAttribute("data-cards"), []);
+      blocks.push({
+        id,
+        type: "card_grid",
+        content: el.querySelector("p")?.textContent || el.textContent || "",
+        props: { cards },
+      });
+    } else if (tagName === "div" && el.getAttribute("data-type") === "prompt-round") {
+      const round = parseInt(el.getAttribute("data-round") || "1", 10);
+      const ask = decodeURIComponent(el.getAttribute("data-ask") || "");
+      const notice = decodeURIComponent(el.getAttribute("data-notice") || "");
+      blocks.push({
+        id,
+        type: "round_dialogue",
+        content: `Round ${round}`,
+        props: { round, ask, notice },
+      });
+    } else if (tagName === "div" && el.getAttribute("data-type") === "pinned-note") {
+      blocks.push({
+        id,
+        type: "pinned_note",
+        content: el.querySelector("p")?.innerHTML || el.innerHTML || el.textContent || "",
       });
     } else {
       // Paragraph or default
