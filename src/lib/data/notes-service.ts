@@ -169,8 +169,18 @@ export const notesService = {
       currentRevision = rev as Revision;
     }
 
+    // Extract PDF metadata from revision blocks if DB table hasn't migrated columns yet
+    const typedNote = note as Note;
+    if (!typedNote.pdf_url) {
+      const pdfBlock = currentRevision?.blocks?.find((b: any) => b?.props?.pdf_url);
+      if (pdfBlock) {
+        typedNote.pdf_url = (pdfBlock.props as any).pdf_url;
+        typedNote.pdf_name = (pdfBlock.props as any).pdf_name;
+      }
+    }
+
     return {
-      note: note as Note,
+      note: typedNote,
       currentRevision,
     };
   },
@@ -324,9 +334,9 @@ export const notesService = {
   },
 
   /**
-   * Updates a note's title and slug
+   * Updates a note's title, slug, and attached PDF
    */
-  async updateNote(noteId: string, updates: { title: string; slug?: string }): Promise<Note> {
+  async updateNote(noteId: string, updates: { title?: string; slug?: string; pdf_url?: string | null; pdf_name?: string | null }): Promise<Note> {
     const supabase = createClient();
     const user = getFirebaseUser();
     const isSuperAdmin = (user.email || "").toLowerCase() === SUPER_ADMIN_EMAIL;
@@ -345,21 +355,74 @@ export const notesService = {
       }
     }
 
-    const slug = updates.slug || updates.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const payload: any = {
+      updated_at: new Date().toISOString(),
+    };
+    if (updates.title) {
+      payload.title = updates.title;
+      payload.slug = updates.slug || updates.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    }
+    if (updates.pdf_url !== undefined) {
+      payload.pdf_url = updates.pdf_url;
+    }
+    if (updates.pdf_name !== undefined) {
+      payload.pdf_name = updates.pdf_name;
+    }
 
+    let updatedNote: any = null;
     const { data, error } = await supabase
       .from("notes")
-      .update({
-        title: updates.title,
-        slug,
-        updated_at: new Date().toISOString(),
-      })
+      .update(payload)
       .eq("id", noteId)
       .select()
       .single();
 
-    if (error) throw error;
-    return data as Note;
+    if (error) {
+      // Graceful fallback if database has not run migration 004 yet
+      if (error.message?.includes("schema cache") || error.code === "PGRST204") {
+        delete payload.pdf_url;
+        delete payload.pdf_name;
+        const { data: retryData, error: retryError } = await supabase
+          .from("notes")
+          .update(payload)
+          .eq("id", noteId)
+          .select()
+          .single();
+        if (retryError) throw retryError;
+        updatedNote = {
+          ...retryData,
+          pdf_url: updates.pdf_url || null,
+          pdf_name: updates.pdf_name || null,
+        };
+      } else {
+        throw error;
+      }
+    } else {
+      updatedNote = data;
+    }
+
+    return updatedNote as Note;
+  },
+
+  /**
+   * Uploads a lecture note PDF to storage
+   */
+  async uploadPdf(file: File, courseId: string, noteId: string): Promise<string> {
+    const supabase = createClient();
+    const filePath = `${courseId}/${noteId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    try {
+      const { error } = await supabase.storage.from("course-pdfs").upload(filePath, file, {
+        upsert: true,
+        contentType: "application/pdf",
+      });
+      if (!error) {
+        const { data: publicData } = supabase.storage.from("course-pdfs").getPublicUrl(filePath);
+        return publicData.publicUrl;
+      }
+    } catch (err) {
+      console.warn("Storage upload error, using local object URL", err);
+    }
+    return URL.createObjectURL(file);
   },
 
   /**
@@ -370,6 +433,8 @@ export const notesService = {
     module_id?: string;
     title: string;
     slug: string;
+    pdf_url?: string | null;
+    pdf_name?: string | null;
     initialBlocks?: NoteBlock[];
   }) {
     const supabase = createClient();
@@ -390,21 +455,56 @@ export const notesService = {
       }
     }
 
-    // 2. Insert Note
-    const { data: noteRecord, error: noteError } = await supabase
-      .from("notes")
-      .insert({
-        course_id: note.course_id,
-        module_id: validModuleId,
-        title: note.title,
-        slug: note.slug,
-        created_by: user.uid,
-      })
-      .select()
-      .single();
-    if (noteError) throw noteError;
+    // 2. Insert Note (with fallback if pdf columns not in schema cache)
+    const basePayload: any = {
+      course_id: note.course_id,
+      module_id: validModuleId,
+      title: note.title,
+      slug: note.slug,
+      created_by: user.uid,
+    };
 
-    // 2. Insert initial baseline revision
+    let noteRecord: any = null;
+    let columnsSupported = true;
+
+    if (note.pdf_url || note.pdf_name) {
+      const fullPayload = {
+        ...basePayload,
+        pdf_url: note.pdf_url || null,
+        pdf_name: note.pdf_name || null,
+      };
+      const { data, error } = await supabase
+        .from("notes")
+        .insert(fullPayload)
+        .select()
+        .single();
+
+      if (error) {
+        if (error.message?.includes("schema cache") || error.code === "PGRST204") {
+          columnsSupported = false;
+        } else {
+          throw error;
+        }
+      } else {
+        noteRecord = data;
+      }
+    }
+
+    if (!noteRecord) {
+      const { data, error } = await supabase
+        .from("notes")
+        .insert(basePayload)
+        .select()
+        .single();
+      if (error) throw error;
+      noteRecord = {
+        ...data,
+        pdf_url: note.pdf_url || null,
+        pdf_name: note.pdf_name || null,
+      };
+    }
+
+    // 3. Insert initial baseline revision
     const blocks = note.initialBlocks || [
       {
         id: "b_head",
@@ -418,6 +518,19 @@ export const notesService = {
         content: "Start writing the notes here. Use the block controls to add headings, mathematics, code blocks, and callouts.",
       },
     ];
+
+    // If database table does not have pdf columns yet, embed in block metadata for persistence
+    if (!columnsSupported && (note.pdf_url || note.pdf_name)) {
+      blocks.unshift({
+        id: "b_pdf_meta",
+        type: "html",
+        content: "",
+        props: {
+          pdf_url: note.pdf_url,
+          pdf_name: note.pdf_name,
+        },
+      });
+    }
 
     const { data: rev, error: revError } = await supabase
       .from("revisions")

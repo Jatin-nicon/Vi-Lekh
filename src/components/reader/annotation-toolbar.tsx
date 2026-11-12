@@ -38,6 +38,7 @@ interface AnnotationToolbarProps {
   onUndo: () => void;
   onClear: () => void;
   onExportPdf: () => void;
+  isExporting?: boolean;
   className?: string;
 }
 
@@ -50,6 +51,7 @@ export function AnnotationToolbar({
   onUndo,
   onClear,
   onExportPdf,
+  isExporting = false,
   className = "",
 }: AnnotationToolbarProps) {
   return (
@@ -202,11 +204,16 @@ export function AnnotationToolbar({
         <button
           type="button"
           onClick={onExportPdf}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#A85D44] hover:bg-[#8F4C35] text-white font-medium text-xs shadow-xs transition-colors cursor-pointer"
+          disabled={isExporting}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#A85D44] hover:bg-[#8F4C35] disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium text-xs shadow-xs transition-colors cursor-pointer"
           title="Export Note with Annotations to PDF"
         >
-          <FileDown className="w-3.5 h-3.5" />
-          <span>Save PDF</span>
+          {isExporting ? (
+            <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          ) : (
+            <FileDown className="w-3.5 h-3.5" />
+          )}
+          <span>{isExporting ? "Baking PDF..." : "Save PDF"}</span>
         </button>
       </div>
     </aside>

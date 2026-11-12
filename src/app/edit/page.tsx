@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, Suspense, useMemo } from "react";
+import React, { useState, useEffect, Suspense, useMemo, useRef } from "react";
 import { notesService } from "@/lib/data/notes-service";
 import { extractErrorMessage } from "@/lib/utils";
 import { useAuth, AuthProvider } from "@/lib/auth/auth-context";
@@ -21,7 +21,11 @@ import {
   Eye,
   FileEdit,
   ShieldCheck,
-  Crown
+  Crown,
+  Upload,
+  CheckCircle2,
+  FileText,
+  X
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -39,6 +43,10 @@ function EditContent() {
   const [html, setHtml] = useState<string>("");
   const [summary, setSummary] = useState("");
   const [editorViewMode, setEditorViewMode] = useState<"editor" | "split" | "preview">("split");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [pdfName, setPdfName] = useState<string | null>(null);
+  const editPdfInputRef = useRef<HTMLInputElement>(null);
   
   const [loading, setLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -69,6 +77,8 @@ function EditContent() {
         const { note: n, currentRevision: rev } = await notesService.getNote(noteId);
         setNote(n);
         setNoteTitle(n.title);
+        setPdfUrl(n.pdf_url || null);
+        setPdfName(n.pdf_name || null);
 
         // Check Course-Level Authorization
         const authorized = await checkCourseEditAccess(n.course_id, user);
@@ -124,6 +134,33 @@ function EditContent() {
 
     try {
       const blocks = htmlToBlocks(html);
+
+      // Update attached PDF if a new file was chosen or removed
+      let finalPdfUrl = pdfUrl;
+      let finalPdfName = pdfName;
+      if (pdfFile) {
+        finalPdfUrl = await notesService.uploadPdf(pdfFile, note.course_id, note.id);
+        finalPdfName = pdfFile.name;
+      }
+
+      if (finalPdfUrl) {
+        const withoutMeta = blocks.filter((b) => b.id !== "b_pdf_meta");
+        blocks.splice(0, blocks.length, {
+          id: "b_pdf_meta",
+          type: "html",
+          content: "",
+          props: {
+            pdf_url: finalPdfUrl,
+            pdf_name: finalPdfName,
+          },
+        }, ...withoutMeta);
+      }
+
+      await notesService.updateNote(note.id, {
+        title: noteTitle.trim() || note.title,
+        pdf_url: finalPdfUrl,
+        pdf_name: finalPdfName,
+      });
 
       // Direct Live Publishing
       await notesService.saveNoteDirect({
@@ -292,6 +329,73 @@ function EditContent() {
           <h2 className="text-sm font-semibold tracking-wide text-[#2D2926] dark:text-[#E3DFD7]">
             Publish Changes Directly to Live Note
           </h2>
+
+          {/* PDF Slide Deck Attachment */}
+          <div>
+            <label className="block text-xs font-semibold text-[#757069] dark:text-[#948F86] mb-1.5 uppercase tracking-wider">
+              Attached Lecture Slides / PDF
+            </label>
+            <input
+              ref={editPdfInputRef}
+              type="file"
+              accept="application/pdf"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  setPdfFile(f);
+                  setPdfName(f.name);
+                }
+              }}
+              className="hidden"
+            />
+            {pdfName || pdfFile ? (
+              <div className="flex items-center justify-between p-3 rounded-xl border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 text-xs text-[#2D2926] dark:text-[#E3DFD7]">
+                <div className="flex items-center gap-2 truncate">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-medium truncate">{pdfName || pdfFile?.name}</span>
+                  {pdfFile && (
+                    <span className="text-stone-400 font-mono text-[11px] shrink-0">
+                      ({(pdfFile.size / (1024 * 1024)).toFixed(1)} MB - New)
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => editPdfInputRef.current?.click()}
+                    className="text-xs text-[#A85D44] hover:underline"
+                  >
+                    Replace
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPdfFile(null);
+                      setPdfUrl(null);
+                      setPdfName(null);
+                    }}
+                    className="text-stone-400 hover:text-red-500"
+                    title="Remove PDF"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div
+                onClick={() => editPdfInputRef.current?.click()}
+                className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-[#E8E3D9] dark:border-[#33312E] hover:border-[#A85D44] dark:hover:border-[#C4785E] rounded-xl cursor-pointer bg-white/50 dark:bg-[#181716]/50 transition-colors"
+              >
+                <Upload className="w-5 h-5 text-[#A85D44] dark:text-[#C4785E] mb-1.5" />
+                <span className="text-xs font-medium text-[#2D2926] dark:text-[#E3DFD7]">
+                  Attach PDF Slide Deck
+                </span>
+                <span className="text-[11px] text-stone-400 mt-0.5">
+                  Click or drag and drop lecture notes (.pdf)
+                </span>
+              </div>
+            )}
+          </div>
           <div>
             <label htmlFor="summary" className="block text-xs font-medium text-[#757069] dark:text-[#948F86] mb-1.5">
               Change Log Note (optional)

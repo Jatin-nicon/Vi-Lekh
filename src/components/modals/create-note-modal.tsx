@@ -1,11 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { notesService } from "@/lib/data/notes-service";
 import { extractErrorMessage } from "@/lib/utils";
 import type { Module, Note } from "@/lib/supabase/types";
-import { X, FileText, AlertCircle, ArrowRight } from "lucide-react";
+import { X, FileText, AlertCircle, ArrowRight, Upload, CheckCircle2 } from "lucide-react";
 
 interface CreateNoteModalProps {
   isOpen: boolean;
@@ -26,6 +26,8 @@ export function CreateNoteModal({
 }: CreateNoteModalProps) {
   const [title, setTitle] = useState("");
   const [moduleId, setModuleId] = useState(defaultModuleId || modules[0]?.id || "");
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -82,15 +84,23 @@ export function CreateNoteModal({
         ? moduleId
         : (modules[0]?.id || undefined);
 
+      let uploadedPdfUrl: string | null = null;
+      if (pdfFile) {
+        uploadedPdfUrl = await notesService.uploadPdf(pdfFile, courseId, "new-note");
+      }
+
       const note = await notesService.createNote({
         course_id: courseId,
         module_id: targetModuleId || undefined,
         title,
         slug: slug || "note-" + Date.now().toString(36),
+        pdf_url: uploadedPdfUrl,
+        pdf_name: pdfFile ? pdfFile.name : null,
       });
 
       onNoteCreated(note);
       setTitle("");
+      setPdfFile(null);
       onClose();
     } catch (err: unknown) {
       setError(extractErrorMessage(err));
@@ -176,6 +186,51 @@ export function CreateNoteModal({
               </select>
             </div>
           )}
+
+          {/* PDF Slide Deck Upload Dropzone */}
+          <div>
+            <label className="block text-xs font-semibold text-[#757069] dark:text-[#948F86] mb-1.5 uppercase tracking-wider">
+              Lecture Slides / Handout (PDF)
+            </label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/pdf"
+              onChange={(e) => setPdfFile(e.target.files?.[0] || null)}
+              className="hidden"
+            />
+            {pdfFile ? (
+              <div className="flex items-center justify-between p-3 rounded-xl border border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-950/20 text-xs text-[#2D2926] dark:text-[#E3DFD7]">
+                <div className="flex items-center gap-2 truncate">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-medium truncate">{pdfFile.name}</span>
+                  <span className="text-stone-400 font-mono text-[11px] shrink-0">
+                    ({(pdfFile.size / (1024 * 1024)).toFixed(1)} MB)
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPdfFile(null)}
+                  className="text-stone-400 hover:text-red-500 ml-2"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-[#E8E3D9] dark:border-[#33312E] hover:border-[#A85D44] dark:hover:border-[#C4785E] rounded-xl cursor-pointer bg-white/50 dark:bg-[#181716]/50 transition-colors"
+              >
+                <Upload className="w-5 h-5 text-[#A85D44] dark:text-[#C4785E] mb-1.5" />
+                <span className="text-xs font-medium text-[#2D2926] dark:text-[#E3DFD7]">
+                  Upload PDF Slide Deck
+                </span>
+                <span className="text-[11px] text-stone-400 mt-0.5">
+                  Click or drag and drop lecture notes (.pdf)
+                </span>
+              </div>
+            )}
+          </div>
 
           <div className="pt-3 flex items-center justify-end gap-3">
             <button

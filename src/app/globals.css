@@ -741,5 +741,34 @@ code, pre {
   background-color: #252321;
 }
 
+/* PDF.js Text Layer styling for selectable text over canvas */
+.textLayer {
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+  user-select: text;
+}
+
+.textLayer span,
+.textLayer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+
+.textLayer ::selection {
+  background: rgba(59, 130, 246, 0.35);
+  color: transparent;
+}
+
+
 
 

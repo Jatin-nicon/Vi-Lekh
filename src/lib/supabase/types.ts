@@ -40,6 +40,8 @@ export interface Note {
   slug: string;
   title: string;
   current_revision_id?: string | null;
+  pdf_url?: string | null;
+  pdf_name?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -97,6 +99,8 @@ export interface Revision {
   author_id: string;
   base_revision_id?: string | null;
   blocks: NoteBlock[];
+  pdf_url?: string | null;
+  pdf_name?: string | null;
   change_summary: string;
   status: RevisionStatus;
   reviewer_id?: string | null;

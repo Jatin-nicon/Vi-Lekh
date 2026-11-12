@@ -3,7 +3,7 @@
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import type { AnnotationTool } from "./annotation-toolbar";
 import { COLOR_PALETTE } from "./annotation-toolbar";
-import { GripVertical, Trash2, Check, Move } from "lucide-react";
+import { Trash2, Check, Move } from "lucide-react";
 
 export interface AnnotationPoint {
   x: number;
@@ -29,8 +29,14 @@ export interface AnnotationTextBox {
   color: string;
 }
 
-interface AnnotationLayerProps {
+export interface AnnotationLayerProps {
   noteId: string;
+  pageNumber?: number;
+  scale?: number;
+  intrinsicWidth?: number;
+  intrinsicHeight?: number;
+  renderedWidth?: number;
+  renderedHeight?: number;
   tool: AnnotationTool;
   color: string;
   strokes: AnnotationStroke[];
@@ -61,6 +67,12 @@ export function pointsToSvgPath(points: AnnotationPoint[]): string {
 
 export function AnnotationLayer({
   noteId,
+  pageNumber,
+  scale = 1.0,
+  intrinsicWidth,
+  intrinsicHeight,
+  renderedWidth,
+  renderedHeight,
   tool,
   color,
   strokes,
@@ -81,15 +93,26 @@ export function AnnotationLayer({
 
   const [activeTextId, setActiveTextId] = useState<string | null>(null);
 
-  // 1. LocalStorage Auto-Persistence per Note ID
-  const strokesStorageKey = `vilekh_annotations_${noteId}`;
-  const textStorageKey = `vilekh_textboxes_${noteId}`;
+  // Effective dimensions for SVG coordinate system
+  const effectiveIntrinsicWidth = intrinsicWidth || renderedWidth || 800;
+  const effectiveIntrinsicHeight = intrinsicHeight || renderedHeight || 1100;
+  const currentScale = scale > 0 ? scale : 1.0;
 
-  // Restore strokes and text boxes from localStorage on initial load or note switch
+  // 1. LocalStorage Auto-Persistence keyed by note ID and page number
+  const strokesStorageKey =
+    pageNumber !== undefined
+      ? `vilekh_pdf_annotations_${noteId}_page_${pageNumber}`
+      : `vilekh_annotations_${noteId}`;
+
+  const textStorageKey =
+    pageNumber !== undefined
+      ? `vilekh_pdf_textboxes_${noteId}_page_${pageNumber}`
+      : `vilekh_textboxes_${noteId}`;
+
+  // Restore strokes and text boxes from localStorage on mount or page switch
   useEffect(() => {
     if (!noteId) return;
 
-    // Restore strokes
     try {
       const savedStrokes = localStorage.getItem(strokesStorageKey);
       if (savedStrokes) {
@@ -104,13 +127,11 @@ export function AnnotationLayer({
       // Ignore storage read errors
     }
 
-    // Restore text boxes
     try {
       const savedTextBoxes = localStorage.getItem(textStorageKey);
       if (savedTextBoxes) {
         const parsed = JSON.parse(savedTextBoxes);
         if (Array.isArray(parsed)) {
-          // Ensure each restored text box has a default width
           const normalized = parsed.map((b: AnnotationTextBox) => ({
             ...b,
             width: b.width || 240,
@@ -162,7 +183,7 @@ export function AnnotationLayer({
     }
   }, [tool, textBoxes, updateTextBoxes]);
 
-  // 2. Keyboard shortcut for Undo (Ctrl+Z / Cmd+Z) & Delete key for active box
+  // 2. Keyboard shortcuts for Undo and active text box deletion
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -201,14 +222,18 @@ export function AnnotationLayer({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [strokes, textBoxes, activeTextId, updateStrokes, updateTextBoxes]);
 
-  // Helper to extract relative mouse/touch coordinate inside SVG
+  // Helper to extract point in intrinsic PDF points (72 DPI coordinates)
   const getPoint = (e: React.PointerEvent<SVGSVGElement>): AnnotationPoint => {
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
+    const svg = svgRef.current;
+    if (!svg) return { x: 0, y: 0 };
+    const rect = svg.getBoundingClientRect();
+    const screenX = e.clientX - rect.left;
+    const screenY = e.clientY - rect.top;
+
+    // Normalizing screen pixels to intrinsic PDF points
+    const ptX = Number((screenX / currentScale).toFixed(2));
+    const ptY = Number((screenY / currentScale).toFixed(2));
+    return { x: ptX, y: ptY };
   };
 
   const isDrawingTool = tool === "pen" || tool === "highlighter" || tool === "underline";
@@ -217,7 +242,11 @@ export function AnnotationLayer({
   const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!isDrawingTool) return;
 
-    (e.target as Element).setPointerCapture(e.pointerId);
+    try {
+      (e.target as Element).setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
 
     const pt = getPoint(e);
     setIsDrawing(true);
@@ -262,7 +291,7 @@ export function AnnotationLayer({
     if (currentStroke.tool === "underline") {
       const startPt = currentStroke.points[0];
       const diffY = Math.abs(pt.y - startPt.y);
-      const finalY = diffY < 8 ? startPt.y : pt.y;
+      const finalY = diffY < 6 ? startPt.y : pt.y;
       setCurrentStroke({
         ...currentStroke,
         points: [startPt, { x: pt.x, y: finalY }],
@@ -298,9 +327,8 @@ export function AnnotationLayer({
     }
   };
 
-  // 4. Text tool container click: spawn new Word/Docs-style text box or deselect on outside click
+  // 4. Text tool container click: spawn new Word/Docs-style text box normalized to intrinsic points
   const handleContainerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // If clicked on an existing text box, button, or textarea, let child handle it
     const target = e.target as HTMLElement;
     if (
       target.closest(".annotation-text-box") ||
@@ -310,7 +338,6 @@ export function AnnotationLayer({
       return;
     }
 
-    // If clicking outside in text mode, deselect active box
     if (activeTextId) {
       const activeBox = textBoxes.find((b) => b.id === activeTextId);
       if (activeBox && !activeBox.text.trim()) {
@@ -322,20 +349,18 @@ export function AnnotationLayer({
 
     if (tool !== "text") return;
 
-    // Prevent browser focus stealing from active input
     e.preventDefault();
 
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
+    const clickX = (e.clientX - rect.left) / currentScale;
+    const clickY = (e.clientY - rect.top) / currentScale;
 
-    const defaultWidth = 240;
-    const boundedX = Math.max(10, Math.min(rect.width - defaultWidth - 10, Math.round(clickX)));
+    const defaultWidth = 220;
+    const boundedX = Math.max(10, Math.min(effectiveIntrinsicWidth - defaultWidth - 10, Math.round(clickX)));
     const boundedY = Math.max(10, Math.round(clickY));
 
-    // Prune previous empty text box if user clicked elsewhere without typing
     const cleanedBoxes = textBoxes.filter((b) =>
       b.id === activeTextId ? b.text.trim().length > 0 : true
     );
@@ -354,13 +379,11 @@ export function AnnotationLayer({
     setActiveTextId(newId);
   };
 
-  // Update text box properties (text, position, or width)
   const handleUpdateTextBox = (id: string, updates: Partial<AnnotationTextBox>) => {
     const updated = textBoxes.map((b) => (b.id === id ? { ...b, ...updates } : b));
     updateTextBoxes(updated);
   };
 
-  // Delete text box
   const handleDeleteTextBox = (id: string) => {
     const updated = textBoxes.filter((b) => b.id !== id);
     updateTextBoxes(updated);
@@ -375,13 +398,15 @@ export function AnnotationLayer({
     <div
       ref={containerRef}
       onPointerDown={handleContainerPointerDown}
-      className={`absolute inset-0 w-full h-full z-10 bg-transparent ${
+      className={`absolute inset-0 w-full h-full bg-transparent ${
         isInteractive ? "pointer-events-auto" : "pointer-events-none"
       } ${tool === "text" ? "cursor-text" : ""} ${className}`}
     >
       {/* Vector SVG Layer for Pen, Highlighter, and Underlines */}
       <svg
         ref={svgRef}
+        viewBox={`0 0 ${effectiveIntrinsicWidth} ${effectiveIntrinsicHeight}`}
+        preserveAspectRatio="none"
         onPointerDown={handleSvgPointerDown}
         onPointerMove={handleSvgPointerMove}
         onPointerUp={handleSvgPointerUp}
@@ -491,6 +516,7 @@ export function AnnotationLayer({
           <WordDocsTextBoxItem
             key={box.id}
             box={box}
+            scale={currentScale}
             tool={tool}
             isSelected={activeTextId === box.id}
             onSelect={() => setActiveTextId(box.id)}
@@ -510,6 +536,7 @@ export function AnnotationLayer({
 
 interface WordDocsTextBoxItemProps {
   box: AnnotationTextBox;
+  scale: number;
   tool: AnnotationTool;
   isSelected: boolean;
   onSelect: () => void;
@@ -518,18 +545,9 @@ interface WordDocsTextBoxItemProps {
   onDelete: () => void;
 }
 
-/**
- * Word/Google Docs-style floating document text box.
- * Features:
- * - Solid document card background with 1.5px border
- * - Google Docs/Word-style active frame with corner handles
- * - Border drag-to-move (cursor: move)
- * - Corner resize handle for width adjustment (cursor: ew-resize / se-resize)
- * - Direct inline auto-wrapping textarea
- * - Print-ready styling for crisp PDF export
- */
 function WordDocsTextBoxItem({
   box,
+  scale,
   tool,
   isSelected,
   onSelect,
@@ -561,9 +579,9 @@ function WordDocsTextBoxItem({
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.max(48, textareaRef.current.scrollHeight)}px`;
+      textareaRef.current.style.height = `${Math.max(36 * scale, textareaRef.current.scrollHeight)}px`;
     }
-  }, [box.text, isSelected, box.width]);
+  }, [box.text, isSelected, box.width, scale]);
 
   // 1. Move/Drag interaction via the bounding frame
   const handleFrameDragStart = (e: React.PointerEvent) => {
@@ -583,8 +601,8 @@ function WordDocsTextBoxItem({
 
   const handleFrameDragMove = (e: React.PointerEvent) => {
     if (!dragRef.current) return;
-    const dx = e.clientX - dragRef.current.startX;
-    const dy = e.clientY - dragRef.current.startY;
+    const dx = (e.clientX - dragRef.current.startX) / scale;
+    const dy = (e.clientY - dragRef.current.startY) / scale;
     const newX = Math.max(0, Math.round(dragRef.current.boxX + dx));
     const newY = Math.max(0, Math.round(dragRef.current.boxY + dy));
     onUpdate({ x: newX, y: newY });
@@ -610,14 +628,14 @@ function WordDocsTextBoxItem({
     }
     resizeRef.current = {
       startX: e.clientX,
-      startWidth: box.width || 240,
+      startWidth: box.width || 220,
     };
   };
 
   const handleResizeMove = (e: React.PointerEvent) => {
     if (!resizeRef.current) return;
-    const dx = e.clientX - resizeRef.current.startX;
-    const newWidth = Math.max(140, Math.min(800, Math.round(resizeRef.current.startWidth + dx)));
+    const dx = (e.clientX - resizeRef.current.startX) / scale;
+    const newWidth = Math.max(120, Math.min(800, Math.round(resizeRef.current.startWidth + dx)));
     onUpdate({ width: newWidth });
   };
 
@@ -633,7 +651,12 @@ function WordDocsTextBoxItem({
 
   const isEraser = tool === "eraser";
   const isDrawingTool = tool === "pen" || tool === "highlighter" || tool === "underline";
-  const boxWidth = box.width || 240;
+  const boxWidth = box.width || 220;
+
+  // Render coordinates scaled to current screen view
+  const screenLeft = Math.round(box.x * scale);
+  const screenTop = Math.round(box.y * scale);
+  const screenWidth = Math.round(boxWidth * scale);
 
   // Hide empty boxes when deselected and tool is not text
   if (!box.text.trim() && !isSelected && tool !== "text") {
@@ -644,9 +667,9 @@ function WordDocsTextBoxItem({
     <div
       style={{
         position: "absolute",
-        left: `${box.x}px`,
-        top: `${box.y}px`,
-        width: `${boxWidth}px`,
+        left: `${screenLeft}px`,
+        top: `${screenTop}px`,
+        width: `${screenWidth}px`,
       }}
       className={`annotation-text-box select-none transition-shadow ${
         isDrawingTool
@@ -669,7 +692,7 @@ function WordDocsTextBoxItem({
     >
       {/* Outer Word/Docs Box Container */}
       <div
-        className={`relative rounded-md p-2.5 transition-colors ${
+        className={`relative rounded-md p-2 transition-colors ${
           isEraser
             ? "border-2 border-dashed border-red-500 bg-red-50/50 dark:bg-red-950/40 shadow-sm"
             : isSelected
@@ -695,7 +718,7 @@ function WordDocsTextBoxItem({
 
             {/* Size indicator & Done/Delete buttons */}
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] opacity-75 font-mono">{boxWidth}px</span>
+              <span className="text-[10px] opacity-75 font-mono">{boxWidth}pt</span>
               <button
                 type="button"
                 onPointerDown={(e) => e.stopPropagation()}
@@ -734,17 +757,17 @@ function WordDocsTextBoxItem({
             {/* Top-Left selection dot */}
             <span
               aria-hidden="true"
-              className="print:hidden absolute -top-1.5 -left-1.5 w-2.5 h-2.5 rounded-xs bg-white border border-[#2563EB] shadow-xs pointer-events-none"
+              className="print:hidden absolute -top-1.5 -left-1.5 w-2 h-2 rounded-xs bg-white border border-[#2563EB] shadow-xs pointer-events-none"
             />
             {/* Top-Right selection dot */}
             <span
               aria-hidden="true"
-              className="print:hidden absolute -top-1.5 -right-1.5 w-2.5 h-2.5 rounded-xs bg-white border border-[#2563EB] shadow-xs pointer-events-none"
+              className="print:hidden absolute -top-1.5 -right-1.5 w-2 h-2 rounded-xs bg-white border border-[#2563EB] shadow-xs pointer-events-none"
             />
             {/* Bottom-Left selection dot */}
             <span
               aria-hidden="true"
-              className="print:hidden absolute -bottom-1.5 -left-1.5 w-2.5 h-2.5 rounded-xs bg-white border border-[#2563EB] shadow-xs pointer-events-none"
+              className="print:hidden absolute -bottom-1.5 -left-1.5 w-2 h-2 rounded-xs bg-white border border-[#2563EB] shadow-xs pointer-events-none"
             />
             {/* Right edge resize handle (Drag to widen/narrow) */}
             <div
@@ -755,18 +778,7 @@ function WordDocsTextBoxItem({
               className="print:hidden absolute top-1/2 -right-2 -translate-y-1/2 w-3.5 h-5 flex items-center justify-center cursor-ew-resize hover:scale-125 transition-transform z-30"
               title="Drag horizontally to resize text box width"
             >
-              <div className="w-2.5 h-3.5 rounded-xs bg-white border-2 border-[#2563EB] shadow-xs" />
-            </div>
-            {/* Bottom-Right corner resize handle */}
-            <div
-              onPointerDown={handleResizeStart}
-              onPointerMove={handleResizeMove}
-              onPointerUp={handleResizeEnd}
-              onPointerCancel={handleResizeEnd}
-              className="print:hidden absolute -bottom-2 -right-2 w-4 h-4 flex items-center justify-center cursor-se-resize hover:scale-125 transition-transform z-30"
-              title="Drag corner to resize text box width"
-            >
-              <div className="w-2.5 h-2.5 rounded-xs bg-white border-2 border-[#2563EB] shadow-xs" />
+              <div className="w-2 h-3 rounded-xs bg-white border-2 border-[#2563EB] shadow-xs" />
             </div>
           </>
         )}
@@ -785,21 +797,30 @@ function WordDocsTextBoxItem({
             ref={textareaRef}
             value={box.text}
             onChange={(e) => onUpdate({ text: e.target.value })}
-            placeholder="Type your notes here..."
+            placeholder="Type note here..."
             className="w-full bg-transparent resize-none outline-none font-sans text-sm leading-relaxed border-none p-0 focus:ring-0 placeholder:text-stone-400 select-text"
-            style={{ color: box.color }}
+            style={{
+              color: box.color,
+              fontSize: `${Math.max(12, 14 * scale)}px`,
+            }}
             rows={2}
           />
         ) : !box.text.trim() && tool === "text" ? (
           /* Empty placeholder indicator in text mode */
-          <div className="font-sans text-xs italic text-stone-400 py-1">
+          <div
+            className="font-sans italic text-stone-400 py-1"
+            style={{ fontSize: `${Math.max(11, 12 * scale)}px` }}
+          >
             Click to type note...
           </div>
         ) : (
           /* Rendered Multiline Text when Deselected */
           <div
-            className="font-sans text-sm leading-relaxed whitespace-pre-wrap select-text break-words"
-            style={{ color: box.color }}
+            className="font-sans leading-relaxed whitespace-pre-wrap select-text break-words"
+            style={{
+              color: box.color,
+              fontSize: `${Math.max(12, 14 * scale)}px`,
+            }}
           >
             {box.text}
           </div>
