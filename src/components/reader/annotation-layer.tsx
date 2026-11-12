@@ -28,6 +28,7 @@ export interface AnnotationShape {
   endY: number;
   color: string;
   width: number;
+  fillOpacity?: number; // 0 (outline), 0.2 (tint), 0.5 (medium), 1.0 (solid)
 }
 
 export interface AnnotationTextBox {
@@ -38,6 +39,9 @@ export interface AnnotationTextBox {
   height?: number;
   text: string;
   color: string;
+  fontSize?: number; // 12, 14, 18, 24 (default 14)
+  bold?: boolean;
+  italic?: boolean;
 }
 
 export interface AnnotationLayerProps {
@@ -50,12 +54,19 @@ export interface AnnotationLayerProps {
   renderedHeight?: number;
   tool: AnnotationTool;
   color: string;
+  penWidth?: number;
+  shapeWidth?: number;
+  shapeFillOpacity?: number;
   strokes: AnnotationStroke[];
   onChangeStrokes: (strokes: AnnotationStroke[]) => void;
   textBoxes?: AnnotationTextBox[];
   onChangeTextBoxes?: (textBoxes: AnnotationTextBox[]) => void;
   shapes?: AnnotationShape[];
   onChangeShapes?: (shapes: AnnotationShape[]) => void;
+  activeShapeId?: string | null;
+  onSelectShape?: (shapeId: string | null) => void;
+  activeTextId?: string | null;
+  onSelectText?: (textId: string | null) => void;
   className?: string;
 }
 
@@ -147,12 +158,19 @@ export function AnnotationLayer({
   renderedHeight,
   tool,
   color,
+  penWidth = 2.5,
+  shapeWidth = 2.0,
+  shapeFillOpacity = 0.0,
   strokes,
   onChangeStrokes,
   textBoxes: propTextBoxes,
   onChangeTextBoxes,
   shapes: propShapes,
   onChangeShapes,
+  activeShapeId: propActiveShapeId,
+  onSelectShape,
+  activeTextId: propActiveTextId,
+  onSelectText,
   className = "",
 }: AnnotationLayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -165,6 +183,17 @@ export function AnnotationLayer({
   const shapes = propShapes !== undefined ? propShapes : internalShapes;
   const setShapes = onChangeShapes || setInternalShapes;
 
+  // Controlled or uncontrolled activeShapeId
+  const [internalActiveShapeId, setInternalActiveShapeId] = useState<string | null>(null);
+  const activeShapeId = propActiveShapeId !== undefined ? propActiveShapeId : internalActiveShapeId;
+  const setActiveShapeId = useCallback(
+    (id: string | null) => {
+      if (onSelectShape) onSelectShape(id);
+      else setInternalActiveShapeId(id);
+    },
+    [onSelectShape]
+  );
+
   // Real-time drag-to-draw preview for shapes
   const [previewShape, setPreviewShape] = useState<AnnotationShape | null>(null);
 
@@ -173,7 +202,16 @@ export function AnnotationLayer({
   const textBoxes = propTextBoxes !== undefined ? propTextBoxes : internalTextBoxes;
   const setTextBoxes = onChangeTextBoxes || setInternalTextBoxes;
 
-  const [activeTextId, setActiveTextId] = useState<string | null>(null);
+  // Controlled or uncontrolled activeTextId
+  const [internalActiveTextId, setInternalActiveTextId] = useState<string | null>(null);
+  const activeTextId = propActiveTextId !== undefined ? propActiveTextId : internalActiveTextId;
+  const setActiveTextId = useCallback(
+    (id: string | null) => {
+      if (onSelectText) onSelectText(id);
+      else setInternalActiveTextId(id);
+    },
+    [onSelectText]
+  );
 
   // Effective dimensions for SVG coordinate system
   const effectiveIntrinsicWidth = intrinsicWidth || renderedWidth || 800;
@@ -381,6 +419,8 @@ export function AnnotationLayer({
     setIsDrawing(true);
 
     if (isShape) {
+      setActiveShapeId(null);
+      setActiveTextId(null);
       setPreviewShape({
         id: "preview",
         type: tool,
@@ -389,18 +429,21 @@ export function AnnotationLayer({
         endX: pt.x,
         endY: pt.y,
         color,
-        width: 2,
+        width: shapeWidth,
+        fillOpacity: shapeFillOpacity,
       });
       return;
     }
 
     if (tool === "pen") {
+      setActiveShapeId(null);
+      setActiveTextId(null);
       setCurrentStroke({
         id: `stroke_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
         tool: "pen",
         points: [pt],
         color,
-        width: 2.5,
+        width: penWidth,
         opacity: 0.95,
       });
     } else if (tool === "highlighter") {
@@ -483,9 +526,11 @@ export function AnnotationLayer({
           endX: previewShape.endX,
           endY: previewShape.endY,
           color: previewShape.color,
-          width: previewShape.width,
+          width: previewShape.width || shapeWidth,
+          fillOpacity: previewShape.fillOpacity ?? shapeFillOpacity,
         };
         updateShapes([...shapes, newShape]);
+        setActiveShapeId(newShape.id);
       }
       setPreviewShape(null);
       return;
@@ -506,21 +551,55 @@ export function AnnotationLayer({
 
   // Erase individual shape
   const handleDeleteShape = (shapeId: string) => {
-    if (tool === "eraser") {
-      updateShapes(shapes.filter((s) => s.id !== shapeId));
+    updateShapes(shapes.filter((s) => s.id !== shapeId));
+    if (activeShapeId === shapeId) {
+      setActiveShapeId(null);
     }
+  };
+
+  const handleUpdateShape = (shapeId: string, updates: Partial<AnnotationShape>) => {
+    const updated = shapes.map((s) => (s.id === shapeId ? { ...s, ...updates } : s));
+    updateShapes(updated);
   };
 
   // Helper to render an SVG shape element
   const renderShapeElement = (shape: AnnotationShape, isPreview = false) => {
     const isEraser = tool === "eraser";
+    const isSelected = activeShapeId === shape.id;
     const eraserProps =
       isEraser && !isPreview
         ? {
             onClick: () => handleDeleteShape(shape.id),
             className: "cursor-pointer hover:stroke-red-500 hover:opacity-100",
           }
+        : !isPreview
+        ? {
+            onClick: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              setActiveTextId(null);
+              setActiveShapeId(shape.id);
+            },
+            className: "cursor-pointer hover:opacity-90",
+          }
         : {};
+
+    const fillVal =
+      shape.fillOpacity && shape.fillOpacity > 0
+        ? shape.color
+        : isEraser
+        ? "transparent"
+        : "none";
+    const fillOpacityVal =
+      shape.fillOpacity && shape.fillOpacity > 0 ? shape.fillOpacity : undefined;
+    const strokeWidthVal = shape.width || 2;
+    const strokeColorVal = shape.color;
+    const pointerEventsVal = isPreview
+      ? "none"
+      : isEraser
+      ? "all"
+      : shape.fillOpacity && shape.fillOpacity > 0
+      ? "all"
+      : "stroke";
 
     switch (shape.type) {
       case "rectangle": {
@@ -536,11 +615,12 @@ export function AnnotationLayer({
             width={w}
             height={h}
             rx={3}
-            fill={isEraser ? "transparent" : "none"}
-            stroke={shape.color}
-            strokeWidth={shape.width}
+            fill={fillVal}
+            fillOpacity={fillOpacityVal}
+            stroke={strokeColorVal}
+            strokeWidth={strokeWidthVal}
             strokeDasharray={isPreview ? "4 3" : undefined}
-            pointerEvents={isPreview ? "none" : isEraser ? "all" : "none"}
+            pointerEvents={pointerEventsVal}
             {...eraserProps}
           />
         );
@@ -557,11 +637,12 @@ export function AnnotationLayer({
             cy={cy}
             rx={rx}
             ry={ry}
-            fill={isEraser ? "transparent" : "none"}
-            stroke={shape.color}
-            strokeWidth={shape.width}
+            fill={fillVal}
+            fillOpacity={fillOpacityVal}
+            stroke={strokeColorVal}
+            strokeWidth={strokeWidthVal}
             strokeDasharray={isPreview ? "4 3" : undefined}
-            pointerEvents={isPreview ? "none" : isEraser ? "all" : "none"}
+            pointerEvents={pointerEventsVal}
             {...eraserProps}
           />
         );
@@ -574,11 +655,11 @@ export function AnnotationLayer({
             y1={shape.startY}
             x2={shape.endX}
             y2={shape.endY}
-            stroke={shape.color}
-            strokeWidth={shape.width}
+            stroke={strokeColorVal}
+            strokeWidth={strokeWidthVal}
             strokeLinecap="round"
             strokeDasharray={isPreview ? "4 3" : undefined}
-            pointerEvents={isPreview ? "none" : isEraser ? "stroke" : "none"}
+            pointerEvents={isPreview ? "none" : "stroke"}
             {...eraserProps}
           />
         );
@@ -590,12 +671,12 @@ export function AnnotationLayer({
             key={shape.id}
             d={pathData}
             fill="none"
-            stroke={shape.color}
-            strokeWidth={shape.width}
+            stroke={strokeColorVal}
+            strokeWidth={strokeWidthVal}
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeDasharray={isPreview ? "4 3" : undefined}
-            pointerEvents={isPreview ? "none" : isEraser ? "stroke" : "none"}
+            pointerEvents={isPreview ? "none" : "stroke"}
             {...eraserProps}
           />
         );
@@ -610,12 +691,13 @@ export function AnnotationLayer({
           <path
             key={shape.id}
             d={pathData}
-            fill={isEraser ? "transparent" : "none"}
-            stroke={shape.color}
-            strokeWidth={shape.width}
+            fill={fillVal}
+            fillOpacity={fillOpacityVal}
+            stroke={strokeColorVal}
+            strokeWidth={strokeWidthVal}
             strokeLinejoin="round"
             strokeDasharray={isPreview ? "4 3" : undefined}
-            pointerEvents={isPreview ? "none" : isEraser ? "all" : "none"}
+            pointerEvents={pointerEventsVal}
             {...eraserProps}
           />
         );
@@ -630,12 +712,13 @@ export function AnnotationLayer({
           <path
             key={shape.id}
             d={pathData}
-            fill={isEraser ? "transparent" : "none"}
-            stroke={shape.color}
-            strokeWidth={shape.width}
+            fill={fillVal}
+            fillOpacity={fillOpacityVal}
+            stroke={strokeColorVal}
+            strokeWidth={strokeWidthVal}
             strokeLinejoin="round"
             strokeDasharray={isPreview ? "4 3" : undefined}
-            pointerEvents={isPreview ? "none" : isEraser ? "all" : "none"}
+            pointerEvents={pointerEventsVal}
             {...eraserProps}
           />
         );
@@ -650,10 +733,15 @@ export function AnnotationLayer({
     const target = e.target as HTMLElement;
     if (
       target.closest(".annotation-text-box") ||
+      target.closest(".shape-selection-frame") ||
       target.closest("button") ||
       target.closest("textarea")
     ) {
       return;
+    }
+
+    if (activeShapeId) {
+      setActiveShapeId(null);
     }
 
     if (activeTextId) {
@@ -691,6 +779,9 @@ export function AnnotationLayer({
       width: defaultWidth,
       text: "",
       color,
+      fontSize: 14,
+      bold: false,
+      italic: false,
     };
 
     updateTextBoxes([...cleanedBoxes, newBox]);
@@ -711,6 +802,7 @@ export function AnnotationLayer({
   };
 
   const isInteractive = true;
+  const activeShape = shapes.find((s) => s.id === activeShapeId) || null;
 
   return (
     <div
@@ -834,7 +926,7 @@ export function AnnotationLayer({
           ))}
       </svg>
 
-      {/* Positioned Word/Docs-Style HTML Text Boxes Layer */}
+      {/* Positioned Word/Docs-Style HTML Text Boxes and Shape Selection Frame */}
       <div className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
         {textBoxes.map((box) => (
           <WordDocsTextBoxItem
@@ -843,7 +935,10 @@ export function AnnotationLayer({
             scale={currentScale}
             tool={tool}
             isSelected={activeTextId === box.id}
-            onSelect={() => setActiveTextId(box.id)}
+            onSelect={() => {
+              setActiveShapeId(null);
+              setActiveTextId(box.id);
+            }}
             onDeselect={() => {
               if (activeTextId === box.id) {
                 setActiveTextId(null);
@@ -853,6 +948,17 @@ export function AnnotationLayer({
             onDelete={() => handleDeleteTextBox(box.id)}
           />
         ))}
+
+        {/* Selected Shape Move/Resize Bounding Frame */}
+        {activeShape && (
+          <ShapeSelectionFrame
+            shape={activeShape}
+            scale={currentScale}
+            onDeselect={() => setActiveShapeId(null)}
+            onUpdate={(updates) => handleUpdateShape(activeShape.id, updates)}
+            onDelete={() => handleDeleteShape(activeShape.id)}
+          />
+        )}
       </div>
     </div>
   );
@@ -1081,17 +1187,17 @@ function WordDocsTextBoxItem({
             {/* Top-Left selection dot */}
             <span
               aria-hidden="true"
-              className="print:hidden absolute -top-1.5 -left-1.5 w-2 h-2 rounded-xs bg-white border border-[#2563EB] shadow-xs pointer-events-none"
+              className="print:hidden absolute -top-1.5 -left-1.5 w-3 h-3 rounded-xs bg-[#2563EB] dark:bg-[#3B82F6] border-1.5 border-white shadow-[0_1px_4px_rgba(0,0,0,0.35)] pointer-events-none"
             />
             {/* Top-Right selection dot */}
             <span
               aria-hidden="true"
-              className="print:hidden absolute -top-1.5 -right-1.5 w-2 h-2 rounded-xs bg-white border border-[#2563EB] shadow-xs pointer-events-none"
+              className="print:hidden absolute -top-1.5 -right-1.5 w-3 h-3 rounded-xs bg-[#2563EB] dark:bg-[#3B82F6] border-1.5 border-white shadow-[0_1px_4px_rgba(0,0,0,0.35)] pointer-events-none"
             />
             {/* Bottom-Left selection dot */}
             <span
               aria-hidden="true"
-              className="print:hidden absolute -bottom-1.5 -left-1.5 w-2 h-2 rounded-xs bg-white border border-[#2563EB] shadow-xs pointer-events-none"
+              className="print:hidden absolute -bottom-1.5 -left-1.5 w-3 h-3 rounded-xs bg-[#2563EB] dark:bg-[#3B82F6] border-1.5 border-white shadow-[0_1px_4px_rgba(0,0,0,0.35)] pointer-events-none"
             />
             {/* Right edge resize handle (Drag to widen/narrow) */}
             <div
@@ -1099,10 +1205,10 @@ function WordDocsTextBoxItem({
               onPointerMove={handleResizeMove}
               onPointerUp={handleResizeEnd}
               onPointerCancel={handleResizeEnd}
-              className="print:hidden absolute top-1/2 -right-2 -translate-y-1/2 w-3.5 h-5 flex items-center justify-center cursor-ew-resize hover:scale-125 transition-transform z-30"
+              className="print:hidden absolute top-1/2 -right-3 -translate-y-1/2 w-5 h-6 flex items-center justify-center cursor-ew-resize hover:scale-125 transition-transform z-30"
               title="Drag horizontally to resize text box width"
             >
-              <div className="w-2 h-3 rounded-xs bg-white border-2 border-[#2563EB] shadow-xs" />
+              <div className="w-2.5 h-4 rounded-xs bg-[#2563EB] dark:bg-[#3B82F6] border-1.5 border-white shadow-[0_2px_5px_rgba(0,0,0,0.4)]" />
             </div>
           </>
         )}
@@ -1125,7 +1231,9 @@ function WordDocsTextBoxItem({
             className="w-full bg-transparent resize-none outline-none font-sans text-sm leading-relaxed border-none p-0 focus:ring-0 placeholder:text-stone-400 select-text"
             style={{
               color: box.color,
-              fontSize: `${Math.max(12, 14 * scale)}px`,
+              fontSize: `${Math.max(12, (box.fontSize || 14) * scale)}px`,
+              fontWeight: box.bold ? "bold" : "normal",
+              fontStyle: box.italic ? "italic" : "normal",
             }}
             rows={2}
           />
@@ -1143,12 +1251,289 @@ function WordDocsTextBoxItem({
             className="font-sans leading-relaxed whitespace-pre-wrap select-text break-words"
             style={{
               color: box.color,
-              fontSize: `${Math.max(12, 14 * scale)}px`,
+              fontSize: `${Math.max(12, (box.fontSize || 14) * scale)}px`,
+              fontWeight: box.bold ? "bold" : "normal",
+              fontStyle: box.italic ? "italic" : "normal",
             }}
           >
             {box.text}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+interface ShapeSelectionFrameProps {
+  shape: AnnotationShape;
+  scale: number;
+  onDeselect: () => void;
+  onUpdate: (updates: Partial<AnnotationShape>) => void;
+  onDelete: () => void;
+}
+
+function ShapeSelectionFrame({
+  shape,
+  scale,
+  onDeselect,
+  onUpdate,
+  onDelete,
+}: ShapeSelectionFrameProps) {
+  const moveRef = useRef<{
+    startX: number;
+    startY: number;
+    initialStartX: number;
+    initialStartY: number;
+    initialEndX: number;
+    initialEndY: number;
+  } | null>(null);
+
+  const resizeRef = useRef<{
+    corner: "tl" | "tr" | "bl" | "br";
+    clientX: number;
+    clientY: number;
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    initialStartX: number;
+    initialStartY: number;
+    initialEndX: number;
+    initialEndY: number;
+  } | null>(null);
+
+  const minX = Math.min(shape.startX, shape.endX);
+  const minY = Math.min(shape.startY, shape.endY);
+  const maxX = Math.max(shape.startX, shape.endX);
+  const maxY = Math.max(shape.startY, shape.endY);
+  const width = Math.max(16, maxX - minX);
+  const height = Math.max(16, maxY - minY);
+
+  const screenLeft = Math.round(minX * scale);
+  const screenTop = Math.round(minY * scale);
+  const screenWidth = Math.round(width * scale);
+  const screenHeight = Math.round(height * scale);
+
+  // Move drag interaction
+  const handleMoveStart = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    try {
+      (e.target as Element).setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+    moveRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialStartX: shape.startX,
+      initialStartY: shape.startY,
+      initialEndX: shape.endX,
+      initialEndY: shape.endY,
+    };
+  };
+
+  const handleMoveMove = (e: React.PointerEvent) => {
+    if (!moveRef.current) return;
+    const dx = (e.clientX - moveRef.current.startX) / scale;
+    const dy = (e.clientY - moveRef.current.startY) / scale;
+    onUpdate({
+      startX: Math.round(moveRef.current.initialStartX + dx),
+      startY: Math.round(moveRef.current.initialStartY + dy),
+      endX: Math.round(moveRef.current.initialEndX + dx),
+      endY: Math.round(moveRef.current.initialEndY + dy),
+    });
+  };
+
+  const handleMoveEnd = (e: React.PointerEvent) => {
+    if (!moveRef.current) return;
+    try {
+      (e.target as Element).releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+    moveRef.current = null;
+  };
+
+  // Corner resize interaction
+  const handleResizeStart = (corner: "tl" | "tr" | "bl" | "br", e: React.PointerEvent) => {
+    e.stopPropagation();
+    try {
+      (e.target as Element).setPointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+    resizeRef.current = {
+      corner,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      minX,
+      minY,
+      maxX,
+      maxY,
+      initialStartX: shape.startX,
+      initialStartY: shape.startY,
+      initialEndX: shape.endX,
+      initialEndY: shape.endY,
+    };
+  };
+
+  const handleResizeMove = (e: React.PointerEvent) => {
+    if (!resizeRef.current) return;
+    const { corner, clientX, clientY, minX: rMinX, minY: rMinY, maxX: rMaxX, maxY: rMaxY, initialStartX, initialStartY, initialEndX, initialEndY } = resizeRef.current;
+    const dx = (e.clientX - clientX) / scale;
+    const dy = (e.clientY - clientY) / scale;
+
+    let newMinX = rMinX;
+    let newMaxX = rMaxX;
+    let newMinY = rMinY;
+    let newMaxY = rMaxY;
+
+    if (corner === "br") {
+      newMaxX = Math.max(rMinX + 16, rMaxX + dx);
+      newMaxY = Math.max(rMinY + 16, rMaxY + dy);
+    } else if (corner === "bl") {
+      newMinX = Math.min(rMaxX - 16, rMinX + dx);
+      newMaxY = Math.max(rMinY + 16, rMaxY + dy);
+    } else if (corner === "tr") {
+      newMaxX = Math.max(rMinX + 16, rMaxX + dx);
+      newMinY = Math.min(rMaxY - 16, rMinY + dy);
+    } else if (corner === "tl") {
+      newMinX = Math.min(rMaxX - 16, rMinX + dx);
+      newMinY = Math.min(rMaxY - 16, rMinY + dy);
+    }
+
+    const oldW = rMaxX - rMinX || 1;
+    const oldH = rMaxY - rMinY || 1;
+    const newW = newMaxX - newMinX;
+    const newH = newMaxY - newMinY;
+
+    const startXNorm = (initialStartX - rMinX) / oldW;
+    const startYNorm = (initialStartY - rMinY) / oldH;
+    const endXNorm = (initialEndX - rMinX) / oldW;
+    const endYNorm = (initialEndY - rMinY) / oldH;
+
+    onUpdate({
+      startX: Math.round(newMinX + startXNorm * newW),
+      startY: Math.round(newMinY + startYNorm * newH),
+      endX: Math.round(newMinX + endXNorm * newW),
+      endY: Math.round(newMinY + endYNorm * newH),
+    });
+  };
+
+  const handleResizeEnd = (e: React.PointerEvent) => {
+    if (!resizeRef.current) return;
+    try {
+      (e.target as Element).releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore
+    }
+    resizeRef.current = null;
+  };
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: `${screenLeft}px`,
+        top: `${screenTop}px`,
+        width: `${screenWidth}px`,
+        height: `${screenHeight}px`,
+      }}
+      className="shape-selection-frame pointer-events-none select-none z-30"
+    >
+      {/* Dashed Selection Bounding Frame with High-Contrast Halo */}
+      <div className="absolute inset-0 border-2 border-dashed border-[#2563EB] dark:border-[#3B82F6] ring-1 ring-white/90 dark:ring-stone-900/90 rounded-xs pointer-events-none shadow-[0_0_0_1px_rgba(37,99,235,0.3)]" />
+
+      {/* Top Floating Action Bar */}
+      <div className="print:hidden absolute -top-8 left-0 right-0 flex items-center justify-between px-2 py-0.5 rounded-md bg-[#2D2926] dark:bg-[#FAF8F5] text-white dark:text-[#21201E] text-[11px] shadow-md z-40 select-none pointer-events-auto">
+        {/* Move handle */}
+        <div
+          onPointerDown={handleMoveStart}
+          onPointerMove={handleMoveMove}
+          onPointerUp={handleMoveEnd}
+          onPointerCancel={handleMoveEnd}
+          className="flex items-center gap-1 cursor-move hover:opacity-80 py-0.5"
+          title="Click and drag to move shape"
+        >
+          <Move className="w-3 h-3" />
+          <span className="font-medium text-[10px] tracking-wide uppercase">Move</span>
+        </div>
+
+        {/* Size indicator & Done / Delete buttons */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] opacity-75 font-mono">
+            {Math.round(width)}×{Math.round(height)}pt
+          </span>
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="p-1 rounded hover:bg-red-600 hover:text-white transition-colors cursor-pointer"
+            title="Delete shape"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeselect();
+            }}
+            className="p-1 rounded hover:bg-emerald-600 hover:text-white transition-colors cursor-pointer"
+            title="Deselect shape"
+          >
+            <Check className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+
+      {/* 4 Corner Resize Anchors (High-Contrast Dual-Tone Squares) */}
+      <div
+        onPointerDown={(e) => handleResizeStart("tl", e)}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeEnd}
+        onPointerCancel={handleResizeEnd}
+        className="print:hidden absolute -top-2.5 -left-2.5 w-6 h-6 flex items-center justify-center cursor-nwse-resize pointer-events-auto z-40"
+        title="Drag to resize"
+      >
+        <div className="w-3.5 h-3.5 rounded-xs bg-[#2563EB] dark:bg-[#3B82F6] border-2 border-white shadow-[0_2px_6px_rgba(0,0,0,0.45)] hover:scale-125 transition-transform" />
+      </div>
+
+      <div
+        onPointerDown={(e) => handleResizeStart("tr", e)}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeEnd}
+        onPointerCancel={handleResizeEnd}
+        className="print:hidden absolute -top-2.5 -right-2.5 w-6 h-6 flex items-center justify-center cursor-nesw-resize pointer-events-auto z-40"
+        title="Drag to resize"
+      >
+        <div className="w-3.5 h-3.5 rounded-xs bg-[#2563EB] dark:bg-[#3B82F6] border-2 border-white shadow-[0_2px_6px_rgba(0,0,0,0.45)] hover:scale-125 transition-transform" />
+      </div>
+
+      <div
+        onPointerDown={(e) => handleResizeStart("bl", e)}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeEnd}
+        onPointerCancel={handleResizeEnd}
+        className="print:hidden absolute -bottom-2.5 -left-2.5 w-6 h-6 flex items-center justify-center cursor-nesw-resize pointer-events-auto z-40"
+        title="Drag to resize"
+      >
+        <div className="w-3.5 h-3.5 rounded-xs bg-[#2563EB] dark:bg-[#3B82F6] border-2 border-white shadow-[0_2px_6px_rgba(0,0,0,0.45)] hover:scale-125 transition-transform" />
+      </div>
+
+      <div
+        onPointerDown={(e) => handleResizeStart("br", e)}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeEnd}
+        onPointerCancel={handleResizeEnd}
+        className="print:hidden absolute -bottom-2.5 -right-2.5 w-6 h-6 flex items-center justify-center cursor-nwse-resize pointer-events-auto z-40"
+        title="Drag to resize"
+      >
+        <div className="w-3.5 h-3.5 rounded-xs bg-[#2563EB] dark:bg-[#3B82F6] border-2 border-white shadow-[0_2px_6px_rgba(0,0,0,0.45)] hover:scale-125 transition-transform" />
       </div>
     </div>
   );

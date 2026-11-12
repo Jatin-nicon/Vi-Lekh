@@ -40,6 +40,13 @@ export function NoteReader({
   // Annotation states
   const [tool, setTool] = useState<AnnotationTool>("pen");
   const [color, setColor] = useState<string>("#A85D44");
+  const [penWidth, setPenWidth] = useState<number>(2.5);
+  const [shapeWidth, setShapeWidth] = useState<number>(2.0);
+  const [shapeFillOpacity, setShapeFillOpacity] = useState<number>(0.0);
+
+  // Active selection states
+  const [activeTextId, setActiveTextId] = useState<string | null>(null);
+  const [activeShapeId, setActiveShapeId] = useState<string | null>(null);
 
   // Per-page annotation maps: pageNumber -> strokes/shapes/textBoxes
   const [pageStrokes, setPageStrokes] = useState<Record<number, AnnotationStroke[]>>({});
@@ -134,6 +141,9 @@ export function NoteReader({
       "Clear all annotations across all pages? (Click Cancel to clear only Page " + activePage + ")"
     );
 
+    setActiveTextId(null);
+    setActiveShapeId(null);
+
     if (clearAll) {
       setPageStrokes({});
       setPageShapes({});
@@ -160,6 +170,138 @@ export function NoteReader({
       }
     }
   }, [totalAnnotationCount, activePage, note.id]);
+
+  // Find currently active text box across pages
+  const activeTextBox = useMemo(() => {
+    if (!activeTextId) return null;
+    for (const page of Object.keys(pageTextBoxes)) {
+      const found = pageTextBoxes[Number(page)]?.find((b) => b.id === activeTextId);
+      if (found) return found;
+    }
+    return null;
+  }, [activeTextId, pageTextBoxes]);
+
+  // Find currently active shape across pages
+  const activeShape = useMemo(() => {
+    if (!activeShapeId) return null;
+    for (const page of Object.keys(pageShapes)) {
+      const found = pageShapes[Number(page)]?.find((s) => s.id === activeShapeId);
+      if (found) return found;
+    }
+    return null;
+  }, [activeShapeId, pageShapes]);
+
+  const handleUpdateActiveTextBox = useCallback(
+    (updates: Partial<AnnotationTextBox>) => {
+      if (!activeTextId) return;
+      setPageTextBoxes((prev) => {
+        const next = { ...prev };
+        for (const pageStr of Object.keys(next)) {
+          const pNum = Number(pageStr);
+          const list = next[pNum];
+          if (list?.some((b) => b.id === activeTextId)) {
+            const updatedList = list.map((b) =>
+              b.id === activeTextId ? { ...b, ...updates } : b
+            );
+            next[pNum] = updatedList;
+            try {
+              localStorage.setItem(
+                `vilekh_pdf_textboxes_${note.id}_page_${pNum}`,
+                JSON.stringify(updatedList)
+              );
+            } catch {
+              // Ignore
+            }
+            break;
+          }
+        }
+        return next;
+      });
+    },
+    [activeTextId, note.id]
+  );
+
+  const handleDeleteActiveTextBox = useCallback(() => {
+    if (!activeTextId) return;
+    setPageTextBoxes((prev) => {
+      const next = { ...prev };
+      for (const pageStr of Object.keys(next)) {
+        const pNum = Number(pageStr);
+        const list = next[pNum];
+        if (list?.some((b) => b.id === activeTextId)) {
+          const updatedList = list.filter((b) => b.id !== activeTextId);
+          next[pNum] = updatedList;
+          try {
+            localStorage.setItem(
+              `vilekh_pdf_textboxes_${note.id}_page_${pNum}`,
+              JSON.stringify(updatedList)
+            );
+          } catch {
+            // Ignore
+          }
+          break;
+        }
+      }
+      return next;
+    });
+    setActiveTextId(null);
+  }, [activeTextId, note.id]);
+
+  const handleUpdateActiveShape = useCallback(
+    (updates: Partial<AnnotationShape>) => {
+      if (!activeShapeId) return;
+      setPageShapes((prev) => {
+        const next = { ...prev };
+        for (const pageStr of Object.keys(next)) {
+          const pNum = Number(pageStr);
+          const list = next[pNum];
+          if (list?.some((s) => s.id === activeShapeId)) {
+            const updatedList = list.map((s) =>
+              s.id === activeShapeId ? { ...s, ...updates } : s
+            );
+            next[pNum] = updatedList;
+            try {
+              localStorage.setItem(
+                `vilekh_pdf_shapes_${note.id}_page_${pNum}`,
+                JSON.stringify(updatedList)
+              );
+            } catch {
+              // Ignore
+            }
+            break;
+          }
+        }
+        return next;
+      });
+    },
+    [activeShapeId, note.id]
+  );
+
+  const handleDeleteActiveShape = useCallback(() => {
+    if (!activeShapeId) return;
+    setPageShapes((prev) => {
+      const next = { ...prev };
+      for (const pageStr of Object.keys(next)) {
+        const pNum = Number(pageStr);
+        const list = next[pNum];
+        if (list?.some((s) => s.id === activeShapeId)) {
+          const updatedList = list.filter((s) => s.id !== activeShapeId);
+          next[pNum] = updatedList;
+          try {
+            localStorage.setItem(
+              `vilekh_pdf_shapes_${note.id}_page_${pNum}`,
+              JSON.stringify(updatedList)
+            );
+          } catch {
+            // Ignore
+          }
+          break;
+        }
+      }
+      return next;
+    });
+    setActiveShapeId(null);
+  }, [activeShapeId, note.id]);
 
   // One-click Client-Side PDF vector export via pdf-lib
   const handleExportPdf = useCallback(async () => {
@@ -221,15 +363,43 @@ export function NoteReader({
         renderedHeight={dims.height}
         tool={tool}
         color={color}
+        penWidth={penWidth}
+        shapeWidth={shapeWidth}
+        shapeFillOpacity={shapeFillOpacity}
         strokes={pageStrokes[pageNum] || []}
         onChangeStrokes={(newStrokes) => handlePageStrokesChange(pageNum, newStrokes)}
         shapes={pageShapes[pageNum] || []}
         onChangeShapes={(newShapes) => handlePageShapesChange(pageNum, newShapes)}
         textBoxes={pageTextBoxes[pageNum] || []}
         onChangeTextBoxes={(newBoxes) => handlePageTextBoxesChange(pageNum, newBoxes)}
+        activeShapeId={activeShapeId}
+        onSelectShape={(id) => {
+          setActiveShapeId(id);
+          if (id) setActiveTextId(null);
+        }}
+        activeTextId={activeTextId}
+        onSelectText={(id) => {
+          setActiveTextId(id);
+          if (id) setActiveShapeId(null);
+        }}
       />
     ),
-    [note.id, tool, color, pageStrokes, pageShapes, pageTextBoxes, handlePageStrokesChange, handlePageShapesChange, handlePageTextBoxesChange]
+    [
+      note.id,
+      tool,
+      color,
+      penWidth,
+      shapeWidth,
+      shapeFillOpacity,
+      pageStrokes,
+      pageShapes,
+      pageTextBoxes,
+      activeShapeId,
+      activeTextId,
+      handlePageStrokesChange,
+      handlePageShapesChange,
+      handlePageTextBoxesChange,
+    ]
   );
 
   return (
@@ -238,7 +408,20 @@ export function NoteReader({
         {/* Sticky Non-Scrolling Annotation Dock (Hidden in Print) */}
         <AnnotationToolbar
           tool={tool}
-          onSelectTool={setTool}
+          onSelectTool={(newTool) => {
+            setTool(newTool);
+            if (newTool !== "text") setActiveTextId(null);
+            if (
+              newTool !== "rectangle" &&
+              newTool !== "circle" &&
+              newTool !== "arrow" &&
+              newTool !== "line" &&
+              newTool !== "star" &&
+              newTool !== "cloud"
+            ) {
+              setActiveShapeId(null);
+            }
+          }}
           selectedColor={color}
           onSelectColor={setColor}
           strokeCount={totalAnnotationCount}
@@ -247,6 +430,20 @@ export function NoteReader({
           onExportPdf={handleExportPdf}
           isExporting={isExporting}
           className="mb-4"
+          penWidth={penWidth}
+          onSelectPenWidth={setPenWidth}
+          activeTextBox={activeTextBox}
+          onUpdateActiveTextBox={handleUpdateActiveTextBox}
+          onDeleteActiveTextBox={handleDeleteActiveTextBox}
+          onDeselectTextBox={() => setActiveTextId(null)}
+          activeShape={activeShape}
+          onUpdateActiveShape={handleUpdateActiveShape}
+          onDeleteActiveShape={handleDeleteActiveShape}
+          onDeselectShape={() => setActiveShapeId(null)}
+          shapeWidth={shapeWidth}
+          onSelectShapeWidth={setShapeWidth}
+          shapeFillOpacity={shapeFillOpacity}
+          onSelectShapeFillOpacity={setShapeFillOpacity}
         />
 
         {/* Slim Meta Breadcrumb Bar with PDF status & Local File Switcher */}
@@ -306,12 +503,25 @@ export function NoteReader({
               noteId={note.id}
               tool={tool}
               color={color}
+              penWidth={penWidth}
+              shapeWidth={shapeWidth}
+              shapeFillOpacity={shapeFillOpacity}
               strokes={pageStrokes[1] || []}
               onChangeStrokes={(strokes) => handlePageStrokesChange(1, strokes)}
               shapes={pageShapes[1] || []}
               onChangeShapes={(shapes) => handlePageShapesChange(1, shapes)}
               textBoxes={pageTextBoxes[1] || []}
               onChangeTextBoxes={(boxes) => handlePageTextBoxesChange(1, boxes)}
+              activeShapeId={activeShapeId}
+              onSelectShape={(id) => {
+                setActiveShapeId(id);
+                if (id) setActiveTextId(null);
+              }}
+              activeTextId={activeTextId}
+              onSelectText={(id) => {
+                setActiveTextId(id);
+                if (id) setActiveShapeId(null);
+              }}
             />
           </div>
         ) : (

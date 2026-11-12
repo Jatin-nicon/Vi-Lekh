@@ -106,8 +106,10 @@ export async function exportAnnotatedPdf({
   // 2. Load PDF document in pdf-lib
   const pdfDoc = await PDFDocument.load(sourceBytes);
   const pages = pdfDoc.getPages();
-  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const italicFont = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
+  const boldItalicFont = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
 
   // 3. Bake annotations page by page
   for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
@@ -244,6 +246,9 @@ export async function exportAnnotatedPdf({
       const parsedColor = parseColor(shape.color);
       const borderWidth = Math.max(1.5, shape.width || 2);
       const borderColor = rgb(parsedColor.r, parsedColor.g, parsedColor.b);
+      const hasFill = shape.fillOpacity !== undefined && shape.fillOpacity > 0;
+      const fillColor = hasFill ? borderColor : undefined;
+      const fillOpacity = hasFill ? shape.fillOpacity : undefined;
 
       switch (shape.type) {
         case "rectangle": {
@@ -260,6 +265,8 @@ export async function exportAnnotatedPdf({
             height: h,
             borderColor,
             borderWidth,
+            color: fillColor,
+            opacity: fillOpacity,
           });
           break;
         }
@@ -277,6 +284,8 @@ export async function exportAnnotatedPdf({
             yScale: ry,
             borderColor,
             borderWidth,
+            color: fillColor,
+            opacity: fillOpacity,
           });
           break;
         }
@@ -319,6 +328,8 @@ export async function exportAnnotatedPdf({
               borderColor,
               borderWidth,
               borderLineCap: LineCapStyle.Round,
+              color: fillColor,
+              opacity: fillOpacity,
             });
           }
           break;
@@ -337,6 +348,8 @@ export async function exportAnnotatedPdf({
               borderColor,
               borderWidth,
               borderLineCap: LineCapStyle.Round,
+              color: fillColor,
+              opacity: fillOpacity,
             });
           }
           break;
@@ -350,10 +363,20 @@ export async function exportAnnotatedPdf({
 
       const parsedColor = parseColor(box.color);
       const boxWidth = Math.max(120, box.width || 220);
-      const fontSize = 11;
-      const lineHeight = 15;
+      const isBold = Boolean(box.bold);
+      const isItalic = Boolean(box.italic);
+      const boxFont =
+        isBold && isItalic
+          ? boldItalicFont
+          : isBold
+          ? boldFont
+          : isItalic
+          ? italicFont
+          : regularFont;
+      const fontSize = box.fontSize || 12;
+      const lineHeight = Math.round(fontSize * 1.35);
 
-      const lines = wrapText(box.text, boxWidth, font, fontSize);
+      const lines = wrapText(box.text, boxWidth, boxFont, fontSize);
       const totalTextHeight = lines.length * lineHeight;
       const padding = 8;
       const boxHeight = totalTextHeight + padding * 2;
@@ -380,7 +403,7 @@ export async function exportAnnotatedPdf({
           x: box.x + padding,
           y: Math.max(0, pdfY + boxHeight - padding - (lineIdx + 1) * lineHeight + 3),
           size: fontSize,
-          font,
+          font: boxFont,
           color: rgb(parsedColor.r, parsedColor.g, parsedColor.b),
         });
       }

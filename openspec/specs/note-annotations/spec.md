@@ -33,6 +33,18 @@ The reader view SHALL provide a sticky non-scrolling toolbar pinned at the top o
 - **WHEN** a user selects a specific shape from the shapes menu
 - **THEN** the system sets the active annotation tool to that shape, updates the toolbar button icon to reflect the selected shape, and closes the dropdown menu
 
+#### Scenario: Pen stroke width dropdown menu
+- **WHEN** a user clicks the pen tool button or its down arrow
+- **THEN** the system toggles a dropdown popover menu presenting stroke width choices (Thin 1.5pt, Medium 2.5pt, Thick 4.0pt) without expanding the horizontal footprint of the toolbar
+
+#### Scenario: Dynamic text styling toolbar
+- **WHEN** a user selects or focuses an annotation text box
+- **THEN** the sticky toolbar dynamically transforms into text styling mode offering Done, Bold toggle, Italic toggle, Font Size dropdown/pills (12pt, 14pt, 18pt, 24pt), color palette, and delete box controls
+
+#### Scenario: Dynamic shape styling toolbar
+- **WHEN** a user completes drawing a new shape or clicks to select an existing shape
+- **THEN** the system automatically selects the shape and the sticky toolbar dynamically transforms into shape styling mode offering Done, Stroke Width selector (1.5pt, 2.5pt, 4pt), Fill Opacity selector (0%, 20%, 50%, 100%), color palette, and delete shape controls; opacity controls SHALL NOT be displayed in the default toolbar before a shape is drawn or selected
+
 ### Requirement: Layered vector drawing, highlighting, and underlining
 The system SHALL provide an interactive SVG vector overlay bounded to each individual PDF page that captures smooth freehand pen strokes, translucent highlighter bands with multiply blending, straight underlines, geometric vector shapes, and stroke/shape erasure.
 
@@ -55,6 +67,18 @@ The system SHALL provide an interactive SVG vector overlay bounded to each indiv
 #### Scenario: Drag-to-draw geometric shapes
 - **WHEN** a user selects a shape tool (rectangle, circle, arrow, line, star, or cloud) and drags across a page overlay
 - **THEN** the system renders a live vector shape preview during drag and commits the finished shape with transparent interior styling and active color swatch upon pointer release
+
+#### Scenario: Select and move geometric shapes
+- **WHEN** a user clicks on an existing shape on a PDF page
+- **THEN** the system activates that shape displaying a high-visibility bounding selection frame (with contrasting halo outline) and 4 corner resize anchors styled with solid accent fill, white halo border, and elevation shadow to prevent blending into white PDF pages or dark backgrounds, and dragging the move handle repositions the shape in real time
+
+#### Scenario: Resize geometric shapes
+- **WHEN** a user drags any of the 4 corner resize anchors of an active shape
+- **THEN** the system scales the shape boundaries proportionally in real time while maintaining crisp anchor visibility across all page backgrounds
+
+#### Scenario: Shape fill opacity styling
+- **WHEN** a user adjusts the fill opacity option on a shape
+- **THEN** the system renders the shape with the chosen interior opacity (0% transparent, 20% tint, 50% medium, or 100% solid) using the shape's stroke color
 
 ### Requirement: Click-to-type annotation text boxes
 The system SHALL allow users to click anywhere on a PDF page canvas to insert, type, and edit custom text boxes that persist across sessions and export into the downloaded PDF.
@@ -79,6 +103,10 @@ The system SHALL allow users to click anywhere on a PDF page canvas to insert, t
 - **WHEN** a user triggers PDF export
 - **THEN** the system bakes the typed text boxes with a 100% transparent background (without opaque fill) into the target PDF page vector stream at exact page coordinates, ensuring underlying slide content remains fully visible
 
+#### Scenario: Text box typography formatting
+- **WHEN** a user toggles bold, italic, or adjusts font size for an active text box
+- **THEN** the system immediately updates the text box typography onscreen and preserves these properties in storage
+
 ### Requirement: Browser-session annotation caching
 The system SHALL save active annotations, geometric shapes, and typed text boxes to browser storage for the current note and restore them automatically upon page reload.
 
@@ -96,6 +124,10 @@ The reader view SHALL allow exporting the lecture note and its vector annotation
 #### Scenario: Trigger PDF export
 - **WHEN** a user clicks the export PDF button in the toolbar
 - **THEN** the system loads the original PDF binary, draws continuous smooth vector Bézier paths with round caps for pen strokes, translucent highlighter bands with multiply blend mode, round-capped straight underlines, vector geometric shapes (rectangle, circle, arrow, line, star, cloud), and transparent text boxes directly onto the corresponding PDF pages via client-side PDF generation, and triggers an immediate file download without invoking the browser print dialog
+
+#### Scenario: Bake typography and shape fills into PDF
+- **WHEN** a user exports a note containing styled text boxes and filled shapes to PDF
+- **THEN** the system embeds standard Helvetica, Helvetica-Bold, Helvetica-Oblique, or Helvetica-BoldOblique font variants matching the text styling and bakes shape fill opacities natively into the output PDF byte stream
 
 ### Requirement: Multi-page PDF page rendering and text selection
 The reader view SHALL render uploaded PDF documents page-by-page using high-DPI canvas rendering, complete with a selectable text layer allowing text selection and copying.
