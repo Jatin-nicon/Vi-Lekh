@@ -22,8 +22,6 @@ The editor workspace SHALL provide instant real-time live preview of the rendere
 #### Scenario: Real-time split view editing
 - **WHEN** an author edits markup in Split mode
 - **THEN** the live preview updates the rendered HTML in real time alongside the code editor
-
-#### Scenario: Full reader preview simulation
 - **WHEN** an author switches to Preview mode
 - **THEN** the editor displays the complete rendered document inside an isolated preview container without altering host editor navigation
 
@@ -57,15 +55,15 @@ The editor SHALL support code blocks with syntax highlighting across standard pr
 - **THEN** system applies Python syntax highlighting to keywords, strings, and comments
 
 ### Requirement: Structured block serialization
-The system SHALL serialize note content directly as clean HTML, migrating legacy block arrays transparently and persisting changes live without intermediate review queues.
+The system SHALL serialize note content supporting uploaded PDF document references and metadata, persisting changes live to the note revision record without intermediate review queues.
 
 #### Scenario: Save document content
-- **WHEN** an authorized editor submits note content for saving
-- **THEN** the system persists the full HTML content directly to the live note revision record immediately
+- **WHEN** an authorized editor uploads and publishes a PDF lecture document
+- **THEN** the system persists the file URL, page count, and title directly to the live note revision record immediately
 
 #### Scenario: Migrate legacy note blocks on load
 - **WHEN** an editor opens a note previously saved in the legacy block format
-- **THEN** the system automatically compiles the block array into unified HTML for editing
+- **THEN** the system automatically compiles the block array into unified document content for viewing or PDF replacement
 
 ### Requirement: Note editor route authorization
 The note editor route (/edit) SHALL restrict access exclusively to the Super Admin and designated Course Editors for the corresponding course.
@@ -84,3 +82,14 @@ The system SHALL serialize all workbook pedagogical blocks into valid HTML with 
 #### Scenario: Persist and reload workbook blocks
 - **WHEN** an author saves a document containing flow, reflection, card grid, round, or pinned blocks
 - **THEN** the converter serializes them into structured block payloads and accurately restores their interactive states upon reopening
+
+### Requirement: PDF lecture document upload
+The Creator Studio and note management workflows SHALL provide an intuitive interface for uploading PDF documents (via drag-and-drop or local file browser) to attach to a course module.
+
+#### Scenario: Upload PDF file in Creator Studio
+- **WHEN** an author drops or selects a `.pdf` file in the note publishing workspace
+- **THEN** the system validates the file format and size, uploads the file to storage, and generates a preview with page count and title
+
+#### Scenario: Reject non-PDF file upload
+- **WHEN** an author attempts to upload a non-PDF file (e.g. `.exe` or `.txt`)
+- **THEN** the system rejects the upload with an informative validation error explaining that only PDF documents are supported
