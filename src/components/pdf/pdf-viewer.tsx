@@ -50,6 +50,14 @@ export function PdfViewer({
 
         let sourceParam: any;
         if (typeof pdfSource === "string") {
+          if (pdfSource.startsWith("blob:")) {
+            try {
+              const testRes = await fetch(pdfSource);
+              if (!testRes.ok) throw new Error("Expired session blob");
+            } catch {
+              throw new Error("This PDF was stored in a temporary browser session that has expired.");
+            }
+          }
           sourceParam = { url: pdfSource };
         } else if (pdfSource instanceof File) {
           const buffer = await pdfSource.arrayBuffer();
@@ -149,8 +157,8 @@ export function PdfViewer({
     return (
       <div className="flex flex-col items-center justify-center py-16 text-stone-600 dark:text-stone-400 gap-2">
         <AlertCircle className="w-8 h-8 text-amber-600" />
-        <p className="text-sm font-semibold">Could not display PDF document</p>
-        <p className="text-xs text-stone-400">{error || "Document not found"}</p>
+        <p className="text-sm font-semibold">No PDF could be loaded</p>
+        <p className="text-xs text-stone-400 max-w-md text-center">{error || "No PDF document found"}</p>
       </div>
     );
   }

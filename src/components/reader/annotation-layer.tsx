@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useEffect, useCallback } from "react";
-import type { AnnotationTool } from "./annotation-toolbar";
+import type { AnnotationTool, ShapeType } from "./annotation-toolbar";
 import { COLOR_PALETTE } from "./annotation-toolbar";
 import { Trash2, Check, Move } from "lucide-react";
 
@@ -17,6 +17,17 @@ export interface AnnotationStroke {
   color: string;
   width: number;
   opacity: number;
+}
+
+export interface AnnotationShape {
+  id: string;
+  type: ShapeType;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  color: string;
+  width: number;
 }
 
 export interface AnnotationTextBox {
@@ -43,7 +54,68 @@ export interface AnnotationLayerProps {
   onChangeStrokes: (strokes: AnnotationStroke[]) => void;
   textBoxes?: AnnotationTextBox[];
   onChangeTextBoxes?: (textBoxes: AnnotationTextBox[]) => void;
+  shapes?: AnnotationShape[];
+  onChangeShapes?: (shapes: AnnotationShape[]) => void;
   className?: string;
+}
+
+export function isShapeTool(tool: AnnotationTool): tool is ShapeType {
+  return (
+    tool === "rectangle" ||
+    tool === "circle" ||
+    tool === "arrow" ||
+    tool === "line" ||
+    tool === "star" ||
+    tool === "cloud"
+  );
+}
+
+export function arrowToSvgPath(startX: number, startY: number, endX: number, endY: number): string {
+  const angle = Math.atan2(endY - startY, endX - startX);
+  const headLength = 14;
+  const headAngle = Math.PI / 6;
+
+  const p1X = endX - headLength * Math.cos(angle - headAngle);
+  const p1Y = endY - headLength * Math.sin(angle - headAngle);
+  const p2X = endX - headLength * Math.cos(angle + headAngle);
+  const p2Y = endY - headLength * Math.sin(angle + headAngle);
+
+  return `M ${startX.toFixed(1)} ${startY.toFixed(1)} L ${endX.toFixed(1)} ${endY.toFixed(1)} M ${p1X.toFixed(1)} ${p1Y.toFixed(1)} L ${endX.toFixed(1)} ${endY.toFixed(1)} L ${p2X.toFixed(1)} ${p2Y.toFixed(1)}`;
+}
+
+export function starToSvgPath(minX: number, minY: number, w: number, h: number): string {
+  const cx = minX + w / 2;
+  const cy = minY + h / 2;
+  const outerRx = w / 2;
+  const outerRy = h / 2;
+  const innerRx = outerRx * 0.42;
+  const innerRy = outerRy * 0.42;
+  let d = "";
+  for (let i = 0; i < 10; i++) {
+    const angle = (i * Math.PI) / 5 - Math.PI / 2;
+    const rx = i % 2 === 0 ? outerRx : innerRx;
+    const ry = i % 2 === 0 ? outerRy : innerRy;
+    const x = cx + rx * Math.cos(angle);
+    const y = cy + ry * Math.sin(angle);
+    d += i === 0 ? `M ${x.toFixed(1)} ${y.toFixed(1)}` : ` L ${x.toFixed(1)} ${y.toFixed(1)}`;
+  }
+  d += " Z";
+  return d;
+}
+
+export function cloudToSvgPath(minX: number, minY: number, w: number, h: number): string {
+  const x = minX;
+  const y = minY;
+  return [
+    `M ${(x + 0.18 * w).toFixed(1)} ${(y + 0.72 * h).toFixed(1)}`,
+    `C ${(x + 0.22 * w).toFixed(1)} ${(y + 0.98 * h).toFixed(1)}, ${(x + 0.45 * w).toFixed(1)} ${(y + 0.98 * h).toFixed(1)}, ${(x + 0.52 * w).toFixed(1)} ${(y + 0.82 * h).toFixed(1)}`,
+    `C ${(x + 0.58 * w).toFixed(1)} ${(y + 0.98 * h).toFixed(1)}, ${(x + 0.82 * w).toFixed(1)} ${(y + 0.98 * h).toFixed(1)}, ${(x + 0.86 * w).toFixed(1)} ${(y + 0.72 * h).toFixed(1)}`,
+    `C ${(x + 1.02 * w).toFixed(1)} ${(y + 0.68 * h).toFixed(1)}, ${(x + 1.02 * w).toFixed(1)} ${(y + 0.35 * h).toFixed(1)}, ${(x + 0.85 * w).toFixed(1)} ${(y + 0.28 * h).toFixed(1)}`,
+    `C ${(x + 0.88 * w).toFixed(1)} ${(y + 0.02 * h).toFixed(1)}, ${(x + 0.65 * w).toFixed(1)} ${(y + 0.02 * h).toFixed(1)}, ${(x + 0.55 * w).toFixed(1)} ${(y + 0.18 * h).toFixed(1)}`,
+    `C ${(x + 0.48 * w).toFixed(1)} ${(y + 0.02 * h).toFixed(1)}, ${(x + 0.28 * w).toFixed(1)} ${(y + 0.02 * h).toFixed(1)}, ${(x + 0.22 * w).toFixed(1)} ${(y + 0.22 * h).toFixed(1)}`,
+    `C ${(x - 0.02 * w).toFixed(1)} ${(y + 0.25 * h).toFixed(1)}, ${(x - 0.02 * w).toFixed(1)} ${(y + 0.65 * h).toFixed(1)}, ${(x + 0.18 * w).toFixed(1)} ${(y + 0.72 * h).toFixed(1)}`,
+    "Z",
+  ].join(" ");
 }
 
 export function pointsToSvgPath(points: AnnotationPoint[]): string {
@@ -79,12 +151,22 @@ export function AnnotationLayer({
   onChangeStrokes,
   textBoxes: propTextBoxes,
   onChangeTextBoxes,
+  shapes: propShapes,
+  onChangeShapes,
   className = "",
 }: AnnotationLayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [currentStroke, setCurrentStroke] = useState<AnnotationStroke | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
+
+  // Internal shapes state if not controlled externally
+  const [internalShapes, setInternalShapes] = useState<AnnotationShape[]>([]);
+  const shapes = propShapes !== undefined ? propShapes : internalShapes;
+  const setShapes = onChangeShapes || setInternalShapes;
+
+  // Real-time drag-to-draw preview for shapes
+  const [previewShape, setPreviewShape] = useState<AnnotationShape | null>(null);
 
   // Internal text box state if not controlled externally
   const [internalTextBoxes, setInternalTextBoxes] = useState<AnnotationTextBox[]>([]);
@@ -109,19 +191,39 @@ export function AnnotationLayer({
       ? `vilekh_pdf_textboxes_${noteId}_page_${pageNumber}`
       : `vilekh_textboxes_${noteId}`;
 
-  // Restore strokes and text boxes from localStorage on mount or page switch
+  const shapesStorageKey =
+    pageNumber !== undefined
+      ? `vilekh_pdf_shapes_${noteId}_page_${pageNumber}`
+      : `vilekh_shapes_${noteId}`;
+
+  // Keep latest callback references without triggering effect re-executions
+  const onChangeStrokesRef = useRef(onChangeStrokes);
+  const setTextBoxesRef = useRef(setTextBoxes);
+  const setShapesRef = useRef(setShapes);
   useEffect(() => {
-    if (!noteId) return;
+    onChangeStrokesRef.current = onChangeStrokes;
+    setTextBoxesRef.current = setTextBoxes;
+    setShapesRef.current = setShapes;
+  });
+
+  // Track initial load per note and page so localStorage read runs exactly once
+  const initializedKeyRef = useRef<string>("");
+
+  // Restore strokes, text boxes, and shapes from localStorage on mount or page switch
+  useEffect(() => {
+    if (!noteId || typeof window === "undefined") return;
+
+    const currentKey = `${noteId}_${strokesStorageKey}_${textStorageKey}_${shapesStorageKey}`;
+    if (initializedKeyRef.current === currentKey) return;
+    initializedKeyRef.current = currentKey;
 
     try {
       const savedStrokes = localStorage.getItem(strokesStorageKey);
       if (savedStrokes) {
         const parsed = JSON.parse(savedStrokes);
-        if (Array.isArray(parsed)) {
-          onChangeStrokes(parsed);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          onChangeStrokesRef.current(parsed);
         }
-      } else {
-        onChangeStrokes([]);
       }
     } catch {
       // Ignore storage read errors
@@ -131,45 +233,68 @@ export function AnnotationLayer({
       const savedTextBoxes = localStorage.getItem(textStorageKey);
       if (savedTextBoxes) {
         const parsed = JSON.parse(savedTextBoxes);
-        if (Array.isArray(parsed)) {
+        if (Array.isArray(parsed) && parsed.length > 0) {
           const normalized = parsed.map((b: AnnotationTextBox) => ({
             ...b,
             width: b.width || 240,
           }));
-          setTextBoxes(normalized);
+          setTextBoxesRef.current(normalized);
         }
-      } else {
-        setTextBoxes([]);
       }
     } catch {
       // Ignore storage read errors
     }
-  }, [noteId, strokesStorageKey, textStorageKey, onChangeStrokes, setTextBoxes]);
+
+    try {
+      const savedShapes = localStorage.getItem(shapesStorageKey);
+      if (savedShapes) {
+        const parsed = JSON.parse(savedShapes);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setShapesRef.current(parsed);
+        }
+      }
+    } catch {
+      // Ignore storage read errors
+    }
+  }, [noteId, strokesStorageKey, textStorageKey, shapesStorageKey]);
 
   // Save strokes to localStorage
   const updateStrokes = useCallback(
     (newStrokes: AnnotationStroke[]) => {
-      onChangeStrokes(newStrokes);
+      onChangeStrokesRef.current(newStrokes);
       try {
         localStorage.setItem(strokesStorageKey, JSON.stringify(newStrokes));
       } catch {
         // Ignore storage write errors (e.g. quota)
       }
     },
-    [onChangeStrokes, strokesStorageKey]
+    [strokesStorageKey]
   );
 
   // Save text boxes to localStorage
   const updateTextBoxes = useCallback(
     (newBoxes: AnnotationTextBox[]) => {
-      setTextBoxes(newBoxes);
+      setTextBoxesRef.current(newBoxes);
       try {
         localStorage.setItem(textStorageKey, JSON.stringify(newBoxes));
       } catch {
         // Ignore storage write errors (e.g. quota)
       }
     },
-    [setTextBoxes, textStorageKey]
+    [textStorageKey]
+  );
+
+  // Save shapes to localStorage
+  const updateShapes = useCallback(
+    (newShapes: AnnotationShape[]) => {
+      setShapesRef.current(newShapes);
+      try {
+        localStorage.setItem(shapesStorageKey, JSON.stringify(newShapes));
+      } catch {
+        // Ignore storage write errors (e.g. quota)
+      }
+    },
+    [shapesStorageKey]
   );
 
   // Clean up empty text boxes when switching away from the text tool
@@ -207,11 +332,14 @@ export function AnnotationLayer({
         return;
       }
 
-      // Undo strokes/boxes with Ctrl+Z / Cmd+Z
+      // Undo strokes/shapes/boxes with Ctrl+Z / Cmd+Z
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey && !isTyping) {
         if (strokes.length > 0) {
           e.preventDefault();
           updateStrokes(strokes.slice(0, -1));
+        } else if (shapes.length > 0) {
+          e.preventDefault();
+          updateShapes(shapes.slice(0, -1));
         } else if (textBoxes.length > 0) {
           e.preventDefault();
           updateTextBoxes(textBoxes.slice(0, -1));
@@ -220,7 +348,7 @@ export function AnnotationLayer({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [strokes, textBoxes, activeTextId, updateStrokes, updateTextBoxes]);
+  }, [strokes, shapes, textBoxes, activeTextId, updateStrokes, updateShapes, updateTextBoxes]);
 
   // Helper to extract point in intrinsic PDF points (72 DPI coordinates)
   const getPoint = (e: React.PointerEvent<SVGSVGElement>): AnnotationPoint => {
@@ -236,9 +364,10 @@ export function AnnotationLayer({
     return { x: ptX, y: ptY };
   };
 
-  const isDrawingTool = tool === "pen" || tool === "highlighter" || tool === "underline";
+  const isShape = isShapeTool(tool);
+  const isDrawingTool = tool === "pen" || tool === "highlighter" || tool === "underline" || isShape;
 
-  // 3. SVG Pointer event handlers for drawing
+  // 3. SVG Pointer event handlers for drawing & shapes
   const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!isDrawingTool) return;
 
@@ -250,6 +379,20 @@ export function AnnotationLayer({
 
     const pt = getPoint(e);
     setIsDrawing(true);
+
+    if (isShape) {
+      setPreviewShape({
+        id: "preview",
+        type: tool,
+        startX: pt.x,
+        startY: pt.y,
+        endX: pt.x,
+        endY: pt.y,
+        color,
+        width: 2,
+      });
+      return;
+    }
 
     if (tool === "pen") {
       setCurrentStroke({
@@ -284,9 +427,20 @@ export function AnnotationLayer({
   };
 
   const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!isDrawing || !currentStroke) return;
+    if (!isDrawing) return;
 
     const pt = getPoint(e);
+
+    if (previewShape) {
+      setPreviewShape({
+        ...previewShape,
+        endX: pt.x,
+        endY: pt.y,
+      });
+      return;
+    }
+
+    if (!currentStroke) return;
 
     if (currentStroke.tool === "underline") {
       const startPt = currentStroke.points[0];
@@ -305,7 +459,7 @@ export function AnnotationLayer({
   };
 
   const handleSvgPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!isDrawing || !currentStroke) return;
+    if (!isDrawing) return;
 
     try {
       (e.target as Element).releasePointerCapture(e.pointerId);
@@ -314,7 +468,30 @@ export function AnnotationLayer({
     }
 
     setIsDrawing(false);
-    if (currentStroke.points.length > 0) {
+
+    if (previewShape) {
+      const dist = Math.hypot(
+        previewShape.endX - previewShape.startX,
+        previewShape.endY - previewShape.startY
+      );
+      if (dist >= 3) {
+        const newShape: AnnotationShape = {
+          id: `shape_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          type: previewShape.type,
+          startX: previewShape.startX,
+          startY: previewShape.startY,
+          endX: previewShape.endX,
+          endY: previewShape.endY,
+          color: previewShape.color,
+          width: previewShape.width,
+        };
+        updateShapes([...shapes, newShape]);
+      }
+      setPreviewShape(null);
+      return;
+    }
+
+    if (currentStroke && currentStroke.points.length > 0) {
       updateStrokes([...strokes, currentStroke]);
     }
     setCurrentStroke(null);
@@ -324,6 +501,147 @@ export function AnnotationLayer({
   const handleDeleteStroke = (strokeId: string) => {
     if (tool === "eraser") {
       updateStrokes(strokes.filter((s) => s.id !== strokeId));
+    }
+  };
+
+  // Erase individual shape
+  const handleDeleteShape = (shapeId: string) => {
+    if (tool === "eraser") {
+      updateShapes(shapes.filter((s) => s.id !== shapeId));
+    }
+  };
+
+  // Helper to render an SVG shape element
+  const renderShapeElement = (shape: AnnotationShape, isPreview = false) => {
+    const isEraser = tool === "eraser";
+    const eraserProps =
+      isEraser && !isPreview
+        ? {
+            onClick: () => handleDeleteShape(shape.id),
+            className: "cursor-pointer hover:stroke-red-500 hover:opacity-100",
+          }
+        : {};
+
+    switch (shape.type) {
+      case "rectangle": {
+        const minX = Math.min(shape.startX, shape.endX);
+        const minY = Math.min(shape.startY, shape.endY);
+        const w = Math.max(1, Math.abs(shape.endX - shape.startX));
+        const h = Math.max(1, Math.abs(shape.endY - shape.startY));
+        return (
+          <rect
+            key={shape.id}
+            x={minX}
+            y={minY}
+            width={w}
+            height={h}
+            rx={3}
+            fill={isEraser ? "transparent" : "none"}
+            stroke={shape.color}
+            strokeWidth={shape.width}
+            strokeDasharray={isPreview ? "4 3" : undefined}
+            pointerEvents={isPreview ? "none" : isEraser ? "all" : "none"}
+            {...eraserProps}
+          />
+        );
+      }
+      case "circle": {
+        const cx = (shape.startX + shape.endX) / 2;
+        const cy = (shape.startY + shape.endY) / 2;
+        const rx = Math.max(1, Math.abs(shape.endX - shape.startX) / 2);
+        const ry = Math.max(1, Math.abs(shape.endY - shape.startY) / 2);
+        return (
+          <ellipse
+            key={shape.id}
+            cx={cx}
+            cy={cy}
+            rx={rx}
+            ry={ry}
+            fill={isEraser ? "transparent" : "none"}
+            stroke={shape.color}
+            strokeWidth={shape.width}
+            strokeDasharray={isPreview ? "4 3" : undefined}
+            pointerEvents={isPreview ? "none" : isEraser ? "all" : "none"}
+            {...eraserProps}
+          />
+        );
+      }
+      case "line": {
+        return (
+          <line
+            key={shape.id}
+            x1={shape.startX}
+            y1={shape.startY}
+            x2={shape.endX}
+            y2={shape.endY}
+            stroke={shape.color}
+            strokeWidth={shape.width}
+            strokeLinecap="round"
+            strokeDasharray={isPreview ? "4 3" : undefined}
+            pointerEvents={isPreview ? "none" : isEraser ? "stroke" : "none"}
+            {...eraserProps}
+          />
+        );
+      }
+      case "arrow": {
+        const pathData = arrowToSvgPath(shape.startX, shape.startY, shape.endX, shape.endY);
+        return (
+          <path
+            key={shape.id}
+            d={pathData}
+            fill="none"
+            stroke={shape.color}
+            strokeWidth={shape.width}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray={isPreview ? "4 3" : undefined}
+            pointerEvents={isPreview ? "none" : isEraser ? "stroke" : "none"}
+            {...eraserProps}
+          />
+        );
+      }
+      case "star": {
+        const minX = Math.min(shape.startX, shape.endX);
+        const minY = Math.min(shape.startY, shape.endY);
+        const w = Math.max(1, Math.abs(shape.endX - shape.startX));
+        const h = Math.max(1, Math.abs(shape.endY - shape.startY));
+        const pathData = starToSvgPath(minX, minY, w, h);
+        return (
+          <path
+            key={shape.id}
+            d={pathData}
+            fill={isEraser ? "transparent" : "none"}
+            stroke={shape.color}
+            strokeWidth={shape.width}
+            strokeLinejoin="round"
+            strokeDasharray={isPreview ? "4 3" : undefined}
+            pointerEvents={isPreview ? "none" : isEraser ? "all" : "none"}
+            {...eraserProps}
+          />
+        );
+      }
+      case "cloud": {
+        const minX = Math.min(shape.startX, shape.endX);
+        const minY = Math.min(shape.startY, shape.endY);
+        const w = Math.max(1, Math.abs(shape.endX - shape.startX));
+        const h = Math.max(1, Math.abs(shape.endY - shape.startY));
+        const pathData = cloudToSvgPath(minX, minY, w, h);
+        return (
+          <path
+            key={shape.id}
+            d={pathData}
+            fill={isEraser ? "transparent" : "none"}
+            stroke={shape.color}
+            strokeWidth={shape.width}
+            strokeLinejoin="round"
+            strokeDasharray={isPreview ? "4 3" : undefined}
+            pointerEvents={isPreview ? "none" : isEraser ? "all" : "none"}
+            {...eraserProps}
+          />
+        );
+      }
+      default:
+        return null;
     }
   };
 
@@ -392,7 +710,7 @@ export function AnnotationLayer({
     }
   };
 
-  const isInteractive = tool !== "cursor";
+  const isInteractive = true;
 
   return (
     <div
@@ -480,6 +798,12 @@ export function AnnotationLayer({
             />
           );
         })}
+
+        {/* Render saved geometric shapes */}
+        {shapes.map((shape) => renderShapeElement(shape))}
+
+        {/* Render active shape preview in progress */}
+        {previewShape && renderShapeElement(previewShape, true)}
 
         {/* Render active stroke in progress */}
         {currentStroke &&
@@ -684,7 +1008,7 @@ function WordDocsTextBoxItem({
         if (isEraser) {
           e.stopPropagation();
           onDelete();
-        } else if (!isSelected && (tool === "text" || tool === "cursor")) {
+        } else if (!isSelected && tool === "text") {
           e.stopPropagation();
           onSelect();
         }

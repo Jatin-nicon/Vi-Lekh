@@ -1,11 +1,20 @@
 "use client";
 
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
-import type { AnnotationStroke, AnnotationTextBox } from "@/components/reader/annotation-layer";
+import { PDFDocument, StandardFonts, rgb, LineCapStyle, BlendMode } from "pdf-lib";
+import {
+  pointsToSvgPath,
+  arrowToSvgPath,
+  starToSvgPath,
+  cloudToSvgPath,
+  type AnnotationStroke,
+  type AnnotationShape,
+  type AnnotationTextBox,
+} from "@/components/reader/annotation-layer";
 
 export interface ExportAnnotatedPdfOptions {
   pdfSource: string | ArrayBuffer | Uint8Array | File;
   strokesMap?: Record<number, AnnotationStroke[]>;
+  shapesMap?: Record<number, AnnotationShape[]>;
   textBoxesMap?: Record<number, AnnotationTextBox[]>;
   noteId?: string;
   filename?: string;
@@ -74,6 +83,7 @@ function wrapText(text: string, maxWidth: number, font: any, fontSize: number): 
 export async function exportAnnotatedPdf({
   pdfSource,
   strokesMap = {},
+  shapesMap = {},
   textBoxesMap = {},
   noteId,
   filename = "annotated_lecture_notes",
@@ -132,24 +142,50 @@ export async function exportAnnotatedPdf({
       }
     }
 
+    // Retrieve geometric shapes for this page (from memory state or localStorage fallback)
+    let pageShapes: AnnotationShape[] = shapesMap[pageNum] || [];
+    if (pageShapes.length === 0 && noteId && typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem(`vilekh_pdf_shapes_${noteId}_page_${pageNum}`);
+        if (stored) {
+          pageShapes = JSON.parse(stored);
+        }
+      } catch {
+        // Ignore
+      }
+    }
+
     // A. Draw Highlighters first (so pen and text draw over them)
     const highlighters = pageStrokes.filter((s) => s.tool === "highlighter");
     for (const hl of highlighters) {
+      if (!hl.points || hl.points.length === 0) continue;
       const parsedColor = parseColor(hl.color);
       const strokeThickness = Math.max(12, hl.width || 18);
       const strokeOpacity = Math.min(0.45, Math.max(0.2, parsedColor.a));
 
-      for (let i = 0; i < hl.points.length - 1; i++) {
-        const p1 = hl.points[i];
-        const p2 = hl.points[i + 1];
-
-        page.drawLine({
-          start: { x: p1.x, y: pageHeight - p1.y },
-          end: { x: p2.x, y: pageHeight - p2.y },
-          thickness: strokeThickness,
+      if (hl.points.length === 1) {
+        const p = hl.points[0];
+        page.drawCircle({
+          x: p.x,
+          y: pageHeight - p.y,
+          size: strokeThickness / 2,
           color: rgb(parsedColor.r, parsedColor.g, parsedColor.b),
           opacity: strokeOpacity,
+          blendMode: BlendMode.Multiply,
         });
+      } else {
+        const svgPath = pointsToSvgPath(hl.points);
+        if (svgPath) {
+          page.drawSvgPath(svgPath, {
+            x: 0,
+            y: pageHeight,
+            borderColor: rgb(parsedColor.r, parsedColor.g, parsedColor.b),
+            borderWidth: strokeThickness,
+            borderLineCap: LineCapStyle.Round,
+            borderOpacity: strokeOpacity,
+            blendMode: BlendMode.Multiply,
+          });
+        }
       }
     }
 
@@ -167,6 +203,7 @@ export async function exportAnnotatedPdf({
           thickness: Math.max(2, ul.width || 3),
           color: rgb(parsedColor.r, parsedColor.g, parsedColor.b),
           opacity: ul.opacity || 0.85,
+          lineCap: LineCapStyle.Round,
         });
       }
     }
@@ -174,6 +211,7 @@ export async function exportAnnotatedPdf({
     // C. Draw Freehand Pen Strokes
     const penStrokes = pageStrokes.filter((s) => s.tool === "pen");
     for (const stroke of penStrokes) {
+      if (!stroke.points || stroke.points.length === 0) continue;
       const parsedColor = parseColor(stroke.color);
       const strokeThickness = Math.max(1.5, stroke.width || 2.5);
 
@@ -182,27 +220,131 @@ export async function exportAnnotatedPdf({
         page.drawCircle({
           x: p.x,
           y: pageHeight - p.y,
-          size: strokeThickness,
+          size: strokeThickness / 2,
           color: rgb(parsedColor.r, parsedColor.g, parsedColor.b),
           opacity: stroke.opacity || 0.95,
         });
       } else {
-        for (let i = 0; i < stroke.points.length - 1; i++) {
-          const p1 = stroke.points[i];
-          const p2 = stroke.points[i + 1];
-
-          page.drawLine({
-            start: { x: p1.x, y: pageHeight - p1.y },
-            end: { x: p2.x, y: pageHeight - p2.y },
-            thickness: strokeThickness,
-            color: rgb(parsedColor.r, parsedColor.g, parsedColor.b),
-            opacity: stroke.opacity || 0.95,
+        const svgPath = pointsToSvgPath(stroke.points);
+        if (svgPath) {
+          page.drawSvgPath(svgPath, {
+            x: 0,
+            y: pageHeight,
+            borderColor: rgb(parsedColor.r, parsedColor.g, parsedColor.b),
+            borderWidth: strokeThickness,
+            borderLineCap: LineCapStyle.Round,
+            borderOpacity: stroke.opacity || 0.95,
           });
         }
       }
     }
 
-    // D. Draw Word/Docs Floating Text Boxes
+    // D. Draw Geometric Shapes (Rectangle, Circle, Line, Arrow, Star, Cloud)
+    for (const shape of pageShapes) {
+      const parsedColor = parseColor(shape.color);
+      const borderWidth = Math.max(1.5, shape.width || 2);
+      const borderColor = rgb(parsedColor.r, parsedColor.g, parsedColor.b);
+
+      switch (shape.type) {
+        case "rectangle": {
+          const minX = Math.min(shape.startX, shape.endX);
+          const minY = Math.min(shape.startY, shape.endY);
+          const w = Math.max(1, Math.abs(shape.endX - shape.startX));
+          const h = Math.max(1, Math.abs(shape.endY - shape.startY));
+
+          // In PDF, origin is bottom-left, so bottom-left Y is pageHeight - minY - h
+          page.drawRectangle({
+            x: minX,
+            y: Math.max(0, pageHeight - minY - h),
+            width: w,
+            height: h,
+            borderColor,
+            borderWidth,
+          });
+          break;
+        }
+
+        case "circle": {
+          const cx = (shape.startX + shape.endX) / 2;
+          const cy = (shape.startY + shape.endY) / 2;
+          const rx = Math.max(1, Math.abs(shape.endX - shape.startX) / 2);
+          const ry = Math.max(1, Math.abs(shape.endY - shape.startY) / 2);
+
+          page.drawEllipse({
+            x: cx,
+            y: Math.max(0, pageHeight - cy),
+            xScale: rx,
+            yScale: ry,
+            borderColor,
+            borderWidth,
+          });
+          break;
+        }
+
+        case "line": {
+          page.drawLine({
+            start: { x: shape.startX, y: pageHeight - shape.startY },
+            end: { x: shape.endX, y: pageHeight - shape.endY },
+            thickness: borderWidth,
+            color: borderColor,
+            lineCap: LineCapStyle.Round,
+          });
+          break;
+        }
+
+        case "arrow": {
+          const svgPath = arrowToSvgPath(shape.startX, shape.startY, shape.endX, shape.endY);
+          if (svgPath) {
+            page.drawSvgPath(svgPath, {
+              x: 0,
+              y: pageHeight,
+              borderColor,
+              borderWidth,
+              borderLineCap: LineCapStyle.Round,
+            });
+          }
+          break;
+        }
+
+        case "star": {
+          const minX = Math.min(shape.startX, shape.endX);
+          const minY = Math.min(shape.startY, shape.endY);
+          const w = Math.max(1, Math.abs(shape.endX - shape.startX));
+          const h = Math.max(1, Math.abs(shape.endY - shape.startY));
+          const svgPath = starToSvgPath(minX, minY, w, h);
+          if (svgPath) {
+            page.drawSvgPath(svgPath, {
+              x: 0,
+              y: pageHeight,
+              borderColor,
+              borderWidth,
+              borderLineCap: LineCapStyle.Round,
+            });
+          }
+          break;
+        }
+
+        case "cloud": {
+          const minX = Math.min(shape.startX, shape.endX);
+          const minY = Math.min(shape.startY, shape.endY);
+          const w = Math.max(1, Math.abs(shape.endX - shape.startX));
+          const h = Math.max(1, Math.abs(shape.endY - shape.startY));
+          const svgPath = cloudToSvgPath(minX, minY, w, h);
+          if (svgPath) {
+            page.drawSvgPath(svgPath, {
+              x: 0,
+              y: pageHeight,
+              borderColor,
+              borderWidth,
+              borderLineCap: LineCapStyle.Round,
+            });
+          }
+          break;
+        }
+      }
+    }
+
+    // E. Draw Word/Docs Floating Text Boxes
     for (const box of pageTextBoxes) {
       if (!box.text.trim()) continue;
 
@@ -219,16 +361,14 @@ export async function exportAnnotatedPdf({
       // Bottom-left Y in PDF coordinate system
       const pdfY = pageHeight - box.y - boxHeight;
 
-      // Card Background with Subtle Border
+      // Transparent Card Frame with Subtle Border
       page.drawRectangle({
         x: box.x,
         y: Math.max(0, pdfY),
         width: boxWidth,
         height: boxHeight,
-        color: rgb(1, 1, 1),
         borderColor: rgb(parsedColor.r, parsedColor.g, parsedColor.b),
         borderWidth: 1,
-        opacity: 0.95,
       });
 
       // Multiline text lines

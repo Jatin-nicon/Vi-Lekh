@@ -13,10 +13,11 @@ import {
   AnnotationLayer,
   type AnnotationStroke,
   type AnnotationTextBox,
+  type AnnotationShape,
 } from "./annotation-layer";
 import { PdfViewer } from "@/components/pdf/pdf-viewer";
 import { exportAnnotatedPdf } from "@/lib/pdf/pdf-export";
-import { CheckCircle2, Calendar, Upload, FileText, Sparkles } from "lucide-react";
+import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 interface NoteReaderProps {
@@ -37,30 +38,36 @@ export function NoteReader({
   const blocks = revision?.blocks || [];
 
   // Annotation states
-  const [tool, setTool] = useState<AnnotationTool>("cursor");
+  const [tool, setTool] = useState<AnnotationTool>("pen");
   const [color, setColor] = useState<string>("#A85D44");
 
-  // Per-page annotation maps: pageNumber -> strokes/textBoxes
+  // Per-page annotation maps: pageNumber -> strokes/shapes/textBoxes
   const [pageStrokes, setPageStrokes] = useState<Record<number, AnnotationStroke[]>>({});
+  const [pageShapes, setPageShapes] = useState<Record<number, AnnotationShape[]>>({});
   const [pageTextBoxes, setPageTextBoxes] = useState<Record<number, AnnotationTextBox[]>>({});
 
   // Active page tracked during scroll
   const [activePage, setActivePage] = useState<number>(1);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
-  // Local PDF file upload state (for offline testing & client-side drops)
-  const [localPdfFile, setLocalPdfFile] = useState<File | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Detect whether database contains an ephemeral blob: URL from an expired browser session
+  const isStaleBlobUrl = useMemo(() => {
+    const candidate = revision?.pdf_url || note.pdf_url;
+    return Boolean(candidate && candidate.startsWith("blob:"));
+  }, [revision?.pdf_url, note.pdf_url]);
 
-  // Determine effective PDF source: local file > revision URL > note URL > fallback default
+  // Determine effective PDF source: revision URL > note URL > fallback default
   const effectivePdfSource = useMemo(() => {
-    if (localPdfFile) return localPdfFile;
-    if (revision?.pdf_url) return revision.pdf_url;
-    if (note.pdf_url) return note.pdf_url;
+    const candidateUrl = revision?.pdf_url || note.pdf_url;
+    if (candidateUrl && !candidateUrl.startsWith("blob:")) {
+      return candidateUrl;
+    }
+
     if (defaultPdfSource) return defaultPdfSource;
-    // Default local sample lecture PDF for seamless verification
-    return "/sample-lecture.pdf";
-  }, [localPdfFile, revision?.pdf_url, note.pdf_url, defaultPdfSource]);
+
+    // No PDF uploaded for this note
+    return null;
+  }, [revision?.pdf_url, note.pdf_url, defaultPdfSource]);
 
   // Fallback HTML content for non-PDF notes
   const renderedContent = useMemo(() => {
@@ -69,16 +76,18 @@ export function NoteReader({
     return renderMathInHtml(rawHtml);
   }, [blocks]);
 
-  // Compute total strokes and text boxes across all pages
+  // Compute total strokes, shapes, and text boxes across all pages
   const totalAnnotationCount = useMemo(() => {
     const strokeCount = Object.values(pageStrokes).reduce((acc, list) => acc + (list?.length || 0), 0);
+    const shapeCount = Object.values(pageShapes).reduce((acc, list) => acc + (list?.length || 0), 0);
     const boxCount = Object.values(pageTextBoxes).reduce((acc, list) => acc + (list?.length || 0), 0);
-    return strokeCount + boxCount;
-  }, [pageStrokes, pageTextBoxes]);
+    return strokeCount + shapeCount + boxCount;
+  }, [pageStrokes, pageShapes, pageTextBoxes]);
 
-  // Undo last stroke or text box on the active page
+  // Undo last stroke, shape, or text box on the active page
   const handleUndo = useCallback(() => {
     const currentPageStrokes = pageStrokes[activePage] || [];
+    const currentPageShapes = pageShapes[activePage] || [];
     const currentPageTextBoxes = pageTextBoxes[activePage] || [];
 
     if (currentPageStrokes.length > 0) {
@@ -87,6 +96,17 @@ export function NoteReader({
       try {
         localStorage.setItem(
           `vilekh_pdf_annotations_${note.id}_page_${activePage}`,
+          JSON.stringify(updated)
+        );
+      } catch {
+        // Ignore
+      }
+    } else if (currentPageShapes.length > 0) {
+      const updated = currentPageShapes.slice(0, -1);
+      setPageShapes((prev) => ({ ...prev, [activePage]: updated }));
+      try {
+        localStorage.setItem(
+          `vilekh_pdf_shapes_${note.id}_page_${activePage}`,
           JSON.stringify(updated)
         );
       } catch {
@@ -104,7 +124,7 @@ export function NoteReader({
         // Ignore
       }
     }
-  }, [activePage, note.id, pageStrokes, pageTextBoxes]);
+  }, [activePage, note.id, pageStrokes, pageShapes, pageTextBoxes]);
 
   // Clear annotations on current page or all pages
   const handleClear = useCallback(() => {
@@ -116,10 +136,12 @@ export function NoteReader({
 
     if (clearAll) {
       setPageStrokes({});
+      setPageShapes({});
       setPageTextBoxes({});
       try {
         for (let i = 1; i <= 100; i++) {
           localStorage.removeItem(`vilekh_pdf_annotations_${note.id}_page_${i}`);
+          localStorage.removeItem(`vilekh_pdf_shapes_${note.id}_page_${i}`);
           localStorage.removeItem(`vilekh_pdf_textboxes_${note.id}_page_${i}`);
         }
       } catch {
@@ -127,9 +149,11 @@ export function NoteReader({
       }
     } else {
       setPageStrokes((prev) => ({ ...prev, [activePage]: [] }));
+      setPageShapes((prev) => ({ ...prev, [activePage]: [] }));
       setPageTextBoxes((prev) => ({ ...prev, [activePage]: [] }));
       try {
         localStorage.removeItem(`vilekh_pdf_annotations_${note.id}_page_${activePage}`);
+        localStorage.removeItem(`vilekh_pdf_shapes_${note.id}_page_${activePage}`);
         localStorage.removeItem(`vilekh_pdf_textboxes_${note.id}_page_${activePage}`);
       } catch {
         // Ignore
@@ -149,6 +173,7 @@ export function NoteReader({
       await exportAnnotatedPdf({
         pdfSource: effectivePdfSource,
         strokesMap: pageStrokes,
+        shapesMap: pageShapes,
         textBoxesMap: pageTextBoxes,
         noteId: note.id,
         filename: `${note.title.replace(/[^a-zA-Z0-9_-]/g, "_")}_annotated`,
@@ -160,14 +185,52 @@ export function NoteReader({
     } finally {
       setIsExporting(false);
     }
-  }, [effectivePdfSource, pageStrokes, pageTextBoxes, note.id, note.title]);
+  }, [effectivePdfSource, pageStrokes, pageShapes, pageTextBoxes, note.id, note.title]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file && file.type === "application/pdf") {
-      setLocalPdfFile(file);
-    }
-  };
+  // Stable handlers for per-page annotation updates
+  const handlePageStrokesChange = useCallback((pageNum: number, newStrokes: AnnotationStroke[]) => {
+    setPageStrokes((prev) => {
+      if (prev[pageNum] === newStrokes) return prev;
+      return { ...prev, [pageNum]: newStrokes };
+    });
+  }, []);
+
+  const handlePageShapesChange = useCallback((pageNum: number, newShapes: AnnotationShape[]) => {
+    setPageShapes((prev) => {
+      if (prev[pageNum] === newShapes) return prev;
+      return { ...prev, [pageNum]: newShapes };
+    });
+  }, []);
+
+  const handlePageTextBoxesChange = useCallback((pageNum: number, newBoxes: AnnotationTextBox[]) => {
+    setPageTextBoxes((prev) => {
+      if (prev[pageNum] === newBoxes) return prev;
+      return { ...prev, [pageNum]: newBoxes };
+    });
+  }, []);
+
+  const renderAnnotationLayer = useCallback(
+    (pageNum: number, dims: { scale: number; width: number; height: number; intrinsicWidth: number; intrinsicHeight: number }) => (
+      <AnnotationLayer
+        noteId={note.id}
+        pageNumber={pageNum}
+        scale={dims.scale}
+        intrinsicWidth={dims.intrinsicWidth}
+        intrinsicHeight={dims.intrinsicHeight}
+        renderedWidth={dims.width}
+        renderedHeight={dims.height}
+        tool={tool}
+        color={color}
+        strokes={pageStrokes[pageNum] || []}
+        onChangeStrokes={(newStrokes) => handlePageStrokesChange(pageNum, newStrokes)}
+        shapes={pageShapes[pageNum] || []}
+        onChangeShapes={(newShapes) => handlePageShapesChange(pageNum, newShapes)}
+        textBoxes={pageTextBoxes[pageNum] || []}
+        onChangeTextBoxes={(newBoxes) => handlePageTextBoxesChange(pageNum, newBoxes)}
+      />
+    ),
+    [note.id, tool, color, pageStrokes, pageShapes, pageTextBoxes, handlePageStrokesChange, handlePageShapesChange, handlePageTextBoxesChange]
+  );
 
   return (
     <div className="w-full min-h-screen py-3 px-2 sm:px-6 print:p-0 print:m-0 print:w-full">
@@ -196,32 +259,14 @@ export function NoteReader({
             <span className="font-semibold text-[#2D2926] dark:text-[#E3DFD7]">
               {note.title}
             </span>
-            {localPdfFile && (
-              <span className="ml-1 px-2 py-0.5 rounded text-[10px] font-mono bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 font-medium">
-                Local: {localPdfFile.name}
+            {!effectivePdfSource && (
+              <span className="ml-1 px-2 py-0.5 rounded text-[10px] bg-stone-200/60 dark:bg-stone-800 text-stone-600 dark:text-stone-400 font-medium">
+                HTML Note
               </span>
             )}
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Quick Local PDF Selector for testing any file */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="application/pdf"
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-stone-300 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-600 dark:text-stone-300 transition-colors cursor-pointer text-[11px]"
-              title="Upload your own PDF to annotate"
-            >
-              <Upload className="w-3 h-3 text-[#A85D44]" />
-              <span>{localPdfFile ? "Switch PDF" : "Open PDF"}</span>
-            </button>
-
             <span className="flex items-center gap-1.5" suppressHydrationWarning>
               <Calendar className="w-3.5 h-3.5" />
               Updated {formatDate(revision?.updated_at || note.updated_at)}
@@ -233,36 +278,28 @@ export function NoteReader({
           </div>
         </div>
 
+        {/* Informational banner when database has an expired blob: URL from a prior session */}
+        {isStaleBlobUrl && (
+          <div className="print:hidden mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
+            <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>
+              {renderedContent
+                ? "The temporary PDF for this note has expired. Displaying note content."
+                : "The temporary PDF for this note has expired."}
+            </span>
+          </div>
+        )}
+
         {/* PDF Document Continuous Viewer with Per-Page Interactive AnnotationLayer */}
         {effectivePdfSource ? (
           <PdfViewer
             pdfSource={effectivePdfSource}
             activePage={activePage}
             onActivePageChange={setActivePage}
-            renderAnnotationLayer={(pageNum, dims) => (
-              <AnnotationLayer
-                noteId={note.id}
-                pageNumber={pageNum}
-                scale={dims.scale}
-                intrinsicWidth={dims.intrinsicWidth}
-                intrinsicHeight={dims.intrinsicHeight}
-                renderedWidth={dims.width}
-                renderedHeight={dims.height}
-                tool={tool}
-                color={color}
-                strokes={pageStrokes[pageNum] || []}
-                onChangeStrokes={(newStrokes) => {
-                  setPageStrokes((prev) => ({ ...prev, [pageNum]: newStrokes }));
-                }}
-                textBoxes={pageTextBoxes[pageNum] || []}
-                onChangeTextBoxes={(newBoxes) => {
-                  setPageTextBoxes((prev) => ({ ...prev, [pageNum]: newBoxes }));
-                }}
-              />
-            )}
+            renderAnnotationLayer={renderAnnotationLayer}
           />
         ) : renderedContent ? (
-          /* Legacy HTML Note View Fallback */
+          /* HTML Note View */
           <div className="relative w-full transition-all">
             <HtmlSandboxedViewer html={renderedContent} />
             <AnnotationLayer
@@ -270,15 +307,25 @@ export function NoteReader({
               tool={tool}
               color={color}
               strokes={pageStrokes[1] || []}
-              onChangeStrokes={(strokes) => setPageStrokes({ 1: strokes })}
+              onChangeStrokes={(strokes) => handlePageStrokesChange(1, strokes)}
+              shapes={pageShapes[1] || []}
+              onChangeShapes={(shapes) => handlePageShapesChange(1, shapes)}
               textBoxes={pageTextBoxes[1] || []}
-              onChangeTextBoxes={(boxes) => setPageTextBoxes({ 1: boxes })}
+              onChangeTextBoxes={(boxes) => handlePageTextBoxesChange(1, boxes)}
             />
           </div>
         ) : (
-          /* Empty State */
-          <div className="py-20 text-center text-xs text-[#757069] dark:text-[#948F86]">
-            <p>This note has no PDF or content attached.</p>
+          /* Empty State: No PDF and No Content */
+          <div className="py-20 px-6 text-center max-w-md mx-auto my-8 bg-[#FAF8F5] dark:bg-[#21201E] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E]">
+            <FileText className="w-10 h-10 text-[#A85D44] mx-auto mb-3 opacity-80" />
+            <h3 className="text-base font-semibold text-[#2D2926] dark:text-[#E3DFD7] mb-1">
+              No PDF Uploaded
+            </h3>
+            <p className="text-xs text-[#757069] dark:text-[#948F86]">
+              {isStaleBlobUrl
+                ? "The temporary PDF upload for this note has expired."
+                : "No document has been attached to this note yet."}
+            </p>
           </div>
         )}
       </div>

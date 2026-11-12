@@ -1,8 +1,7 @@
 "use client";
 
-import React from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
-  MousePointer,
   Pen,
   Highlighter,
   Underline as UnderlineIcon,
@@ -11,9 +10,32 @@ import {
   Undo2,
   Trash2,
   FileDown,
+  Square,
+  Circle,
+  MoveRight,
+  Minus,
+  Star,
+  Cloud,
+  ChevronDown,
 } from "lucide-react";
 
-export type AnnotationTool = "cursor" | "pen" | "highlighter" | "underline" | "text" | "eraser";
+export type ShapeType = "rectangle" | "circle" | "arrow" | "line" | "star" | "cloud";
+export type AnnotationTool = "pen" | "highlighter" | "underline" | "text" | "eraser" | ShapeType;
+
+export interface ShapeDefinition {
+  type: ShapeType;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+export const SHAPE_DEFINITIONS: ShapeDefinition[] = [
+  { type: "rectangle", label: "Rectangle", icon: Square },
+  { type: "circle", label: "Circle / Ellipse", icon: Circle },
+  { type: "arrow", label: "Arrow", icon: MoveRight },
+  { type: "line", label: "Straight Line", icon: Minus },
+  { type: "star", label: "Star (Key Note)", icon: Star },
+  { type: "cloud", label: "Cloud (Idea)", icon: Cloud },
+];
 
 export interface ColorOption {
   label: string;
@@ -54,27 +76,41 @@ export function AnnotationToolbar({
   isExporting = false,
   className = "",
 }: AnnotationToolbarProps) {
+  const [isShapesOpen, setIsShapesOpen] = useState(false);
+  const [activeShape, setActiveShape] = useState<ShapeType>("rectangle");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const isShapeActive = SHAPE_DEFINITIONS.some((s) => s.type === tool);
+  const currentShapeType: ShapeType = isShapeActive ? (tool as ShapeType) : activeShape;
+  const ActiveShapeIcon = SHAPE_DEFINITIONS.find((s) => s.type === currentShapeType)?.icon || Square;
+
+  useEffect(() => {
+    if (SHAPE_DEFINITIONS.some((s) => s.type === tool)) {
+      setActiveShape(tool as ShapeType);
+    }
+  }, [tool]);
+
+  useEffect(() => {
+    if (!isShapesOpen) return;
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsShapesOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+    };
+  }, [isShapesOpen]);
+
   return (
     <aside
       aria-label="Annotation controls"
       className={`print:hidden sticky top-20 z-40 max-w-fit mx-auto transition-all ${className}`}
     >
       <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 p-1.5 rounded-full bg-[#FAF8F5]/90 dark:bg-[#21201E]/90 backdrop-blur-md border border-[#E8E3D9] dark:border-[#33312E] shadow-[0_4px_20px_rgba(45,41,38,0.08)] text-xs text-[#2D2926] dark:text-[#E3DFD7]">
-        {/* Tool: Cursor / Pointer */}
-        <button
-          type="button"
-          onClick={() => onSelectTool("cursor")}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer ${
-            tool === "cursor"
-              ? "bg-[#2D2926] text-white dark:bg-[#E3DFD7] dark:text-[#21201E] shadow-xs"
-              : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
-          }`}
-          title="Cursor (Select text & normal reading)"
-        >
-          <MousePointer className="w-3.5 h-3.5" />
-          <span className="hidden md:inline">Select</span>
-        </button>
-
         {/* Tool: Pen */}
         <button
           type="button"
@@ -119,6 +155,58 @@ export function AnnotationToolbar({
           <UnderlineIcon className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Underline</span>
         </button>
+
+        {/* Tool: Shapes Dropdown Popover */}
+        <div className="relative" ref={dropdownRef}>
+          <button
+            type="button"
+            onClick={() => {
+              if (!isShapeActive) {
+                onSelectTool(activeShape);
+              }
+              setIsShapesOpen((prev) => !prev);
+            }}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer ${
+              isShapeActive
+                ? "bg-[#A85D44] text-white shadow-xs"
+                : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
+            }`}
+            title="Geometric Shapes (Rectangle, Circle, Arrow, Line, Star, Cloud)"
+            aria-expanded={isShapesOpen}
+          >
+            <ActiveShapeIcon className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Shapes</span>
+            <ChevronDown className={`w-3 h-3 transition-transform ${isShapesOpen ? "rotate-180" : ""}`} />
+          </button>
+
+          {isShapesOpen && (
+            <div className="absolute top-full mt-2 left-0 z-50 min-w-[160px] p-1.5 rounded-xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-lg flex flex-col gap-0.5 animate-in fade-in-0 zoom-in-95 duration-100">
+              {SHAPE_DEFINITIONS.map((def) => {
+                const IconComponent = def.icon;
+                const isSelected = tool === def.type;
+                return (
+                  <button
+                    key={def.type}
+                    type="button"
+                    onClick={() => {
+                      setActiveShape(def.type);
+                      onSelectTool(def.type);
+                      setIsShapesOpen(false);
+                    }}
+                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer text-left ${
+                      isSelected
+                        ? "bg-[#A85D44] text-white"
+                        : "text-[#2D2926] dark:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
+                    }`}
+                  >
+                    <IconComponent className="w-4 h-4 shrink-0" />
+                    <span>{def.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Tool: Text Box */}
         <button
