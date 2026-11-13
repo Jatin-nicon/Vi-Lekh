@@ -39,6 +39,7 @@ export interface Note {
   module_id?: string;
   slug: string;
   title: string;
+  order_index?: number;
   current_revision_id?: string | null;
   pdf_url?: string | null;
   pdf_name?: string | null;

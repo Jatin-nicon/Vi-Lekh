@@ -114,26 +114,106 @@ export const notesService = {
    */
   async getCourseWithModulesAndNotes(courseId: string) {
     const supabase = createClient();
-    const [modulesRes, notesRes] = await Promise.all([
-      supabase
-        .from("modules")
-        .select("*")
-        .eq("course_id", courseId)
-        .order("order_index", { ascending: true }),
-      supabase
+    const modulesRes = await supabase
+      .from("modules")
+      .select("*")
+      .eq("course_id", courseId)
+      .order("order_index", { ascending: true });
+
+    if (modulesRes.error) throw modulesRes.error;
+
+    let notesData: Note[] = [];
+    try {
+      const notesRes = await supabase
         .from("notes")
         .select("*")
         .eq("course_id", courseId)
-        .order("created_at", { ascending: true }),
-    ]);
+        .order("order_index", { ascending: true })
+        .order("created_at", { ascending: true });
 
-    if (modulesRes.error) throw modulesRes.error;
-    if (notesRes.error) throw notesRes.error;
+      if (notesRes.error) {
+        // Fallback to created_at if order_index column is not yet present
+        const fallbackRes = await supabase
+          .from("notes")
+          .select("*")
+          .eq("course_id", courseId)
+          .order("created_at", { ascending: true });
+        if (fallbackRes.error) throw fallbackRes.error;
+        notesData = (fallbackRes.data || []) as Note[];
+      } else {
+        notesData = (notesRes.data || []) as Note[];
+      }
+    } catch {
+      const fallbackRes = await supabase
+        .from("notes")
+        .select("*")
+        .eq("course_id", courseId)
+        .order("created_at", { ascending: true });
+      if (fallbackRes.error) throw fallbackRes.error;
+      notesData = (fallbackRes.data || []) as Note[];
+    }
 
     return {
       modules: (modulesRes.data || []) as Module[],
-      notes: (notesRes.data || []) as Note[],
+      notes: notesData,
     };
+  },
+
+  /**
+   * Updates order_index for a list of notes within a course
+   */
+  async reorderNotes(
+    courseId: string,
+    updates: { id: string; order_index: number; module_id?: string | null }[]
+  ) {
+    const supabase = createClient();
+
+    const updatePromises = updates.map((update) => {
+      const payload: { order_index: number; module_id?: string | null } = {
+        order_index: update.order_index,
+      };
+      if (update.module_id !== undefined) {
+        payload.module_id = update.module_id;
+      }
+      return supabase
+        .from("notes")
+        .update(payload)
+        .eq("id", update.id)
+        .eq("course_id", courseId);
+    });
+
+    const results = await Promise.all(updatePromises);
+    for (const res of results) {
+      if (res.error) {
+        console.error("Failed to update note order:", res.error);
+        throw res.error;
+      }
+    }
+  },
+
+  /**
+   * Reassigns a note to a different module (or unassigned if moduleId is null)
+   */
+  async updateNoteModule(noteId: string, moduleId: string | null, orderIndex?: number) {
+    const supabase = createClient();
+    const payload: { module_id: string | null; order_index?: number } = {
+      module_id: moduleId,
+    };
+    if (orderIndex !== undefined) {
+      payload.order_index = orderIndex;
+    }
+    const { data, error } = await supabase
+      .from("notes")
+      .update(payload)
+      .eq("id", noteId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Failed to update note module:", error);
+      throw error;
+    }
+    return data as Note;
   },
 
   /**
@@ -222,6 +302,46 @@ export const notesService = {
       });
     } catch {
       // Non-blocking fallback
+    }
+
+    return data as Course;
+  },
+
+  /**
+   * Updates course title, description, domain, or icon
+   */
+  async updateCourse(
+    courseId: string,
+    updates: Partial<Pick<Course, "title" | "description" | "domain" | "icon" | "slug">>
+  ): Promise<Course> {
+    const supabase = createClient();
+    const user = getFirebaseUser();
+    const isSuperAdmin = (user.email || "").toLowerCase() === SUPER_ADMIN_EMAIL;
+
+    if (!isSuperAdmin) {
+      const role = await notesService.getUserCourseRole(courseId);
+      if (role !== "admin" && role !== "editor") {
+        throw new Error("You do not have permission to edit this course.");
+      }
+    }
+
+    const payload: any = {};
+    if (updates.title !== undefined) payload.title = updates.title;
+    if (updates.description !== undefined) payload.description = updates.description;
+    if (updates.domain !== undefined) payload.domain = updates.domain;
+    if (updates.icon !== undefined) payload.icon = updates.icon;
+    if (updates.slug !== undefined) payload.slug = updates.slug;
+
+    const { data, error } = await supabase
+      .from("courses")
+      .update(payload)
+      .eq("id", courseId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Failed to update course:", error);
+      throw error;
     }
 
     return data as Course;
@@ -433,6 +553,7 @@ export const notesService = {
     module_id?: string;
     title: string;
     slug: string;
+    order_index?: number;
     pdf_url?: string | null;
     pdf_name?: string | null;
     initialBlocks?: NoteBlock[];
@@ -463,6 +584,9 @@ export const notesService = {
       slug: note.slug,
       created_by: user.uid,
     };
+    if (note.order_index !== undefined) {
+      basePayload.order_index = note.order_index;
+    }
 
     let noteRecord: any = null;
     let columnsSupported = true;
@@ -480,7 +604,7 @@ export const notesService = {
         .single();
 
       if (error) {
-        if (error.message?.includes("schema cache") || error.code === "PGRST204") {
+        if (error.message?.includes("schema cache") || error.code === "PGRST204" || error.message?.includes("order_index")) {
           columnsSupported = false;
         } else {
           throw error;
@@ -491,17 +615,36 @@ export const notesService = {
     }
 
     if (!noteRecord) {
-      const { data, error } = await supabase
-        .from("notes")
-        .insert(basePayload)
-        .select()
-        .single();
-      if (error) throw error;
-      noteRecord = {
-        ...data,
-        pdf_url: note.pdf_url || null,
-        pdf_name: note.pdf_name || null,
-      };
+      try {
+        const { data, error } = await supabase
+          .from("notes")
+          .insert(basePayload)
+          .select()
+          .single();
+        if (error) throw error;
+        noteRecord = {
+          ...data,
+          pdf_url: note.pdf_url || null,
+          pdf_name: note.pdf_name || null,
+        };
+      } catch (err: any) {
+        if (err?.message?.includes("order_index") || err?.code === "PGRST204") {
+          delete basePayload.order_index;
+          const { data, error } = await supabase
+            .from("notes")
+            .insert(basePayload)
+            .select()
+            .single();
+          if (error) throw error;
+          noteRecord = {
+            ...data,
+            pdf_url: note.pdf_url || null,
+            pdf_name: note.pdf_name || null,
+          };
+        } else {
+          throw err;
+        }
+      }
     }
 
     // 3. Insert initial baseline revision

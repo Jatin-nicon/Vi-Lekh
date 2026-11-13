@@ -7,9 +7,11 @@ import { isSuperAdmin as checkIsSuperAdmin, checkStudioAccess } from "@/lib/auth
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/auth/user-menu";
 import { CreateCourseModal } from "@/components/modals/create-course-modal";
+import { EditCourseModal } from "@/components/modals/edit-course-modal";
 import { CreateModuleModal } from "@/components/modals/create-module-modal";
 import { CreateNoteModal } from "@/components/modals/create-note-modal";
 import { CourseAccessModal } from "@/components/modals/course-access-modal";
+import { MoveNoteModal } from "@/components/modals/move-note-modal";
 import { extractErrorMessage } from "@/lib/utils";
 import type { Course, CourseWithStats, Module, Note } from "@/lib/supabase/types";
 import { 
@@ -30,7 +32,11 @@ import {
   X,
   Sparkles,
   LayoutDashboard,
-  FolderPlus
+  FolderPlus,
+  GripVertical,
+  ChevronUp,
+  ChevronDown,
+  FolderInput
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -51,10 +57,16 @@ function StudioContent() {
 
   // Modals state
   const [isCreateCourseOpen, setIsCreateCourseOpen] = useState(false);
+  const [isEditCourseOpen, setIsEditCourseOpen] = useState(false);
   const [isCreateModuleOpen, setIsCreateModuleOpen] = useState(false);
   const [isCreateNoteOpen, setIsCreateNoteOpen] = useState(false);
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
   const [targetModuleIdForNote, setTargetModuleIdForNote] = useState<string | undefined>(undefined);
+
+  // Moving note & reordering state
+  const [movingNote, setMovingNote] = useState<Note | null>(null);
+  const [draggedNoteId, setDraggedNoteId] = useState<string | null>(null);
+  const [dragOverNoteId, setDragOverNoteId] = useState<string | null>(null);
 
   // Inline editing state
   const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
@@ -146,6 +158,13 @@ function StudioContent() {
     setIsCreateCourseOpen(false);
   };
 
+  const handleCourseUpdated = (updated: Course) => {
+    setSelectedCourse((prev) => (prev ? { ...prev, ...updated } : null));
+    setCourses((prev) =>
+      prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
+    );
+  };
+
   const handleDeleteCourse = async (course: Course) => {
     if (!isSuper) {
       alert("Only the Super Admin can delete courses.");
@@ -215,6 +234,115 @@ function StudioContent() {
       setNotes((prev) => prev.filter((n) => n.id !== note.id));
     } catch (err) {
       alert(extractErrorMessage(err));
+    }
+  };
+
+  const handleMoveNoteStep = async (note: Note, direction: "up" | "down") => {
+    if (!selectedCourse) return;
+    const currentList = notes
+      .filter((n) => (n.module_id || null) === (note.module_id || null))
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+
+    const index = currentList.findIndex((n) => n.id === note.id);
+    if (index === -1) return;
+
+    const targetIndex = direction === "up" ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= currentList.length) return;
+
+    const newCurrentList = [...currentList];
+    const [moved] = newCurrentList.splice(index, 1);
+    newCurrentList.splice(targetIndex, 0, moved);
+
+    const updates = newCurrentList.map((n, idx) => ({
+      id: n.id,
+      order_index: idx,
+      module_id: n.module_id || null,
+    }));
+
+    // Optimistic UI update
+    setNotes((prev) =>
+      prev.map((n) => {
+        const match = updates.find((u) => u.id === n.id);
+        return match ? { ...n, order_index: match.order_index } : n;
+      })
+    );
+
+    // Persist to Supabase
+    try {
+      await notesService.reorderNotes(selectedCourse.id, updates);
+    } catch (err) {
+      console.error("Failed to persist note reordering:", err);
+      if (selectedCourse) loadSyllabus(selectedCourse.id);
+      alert("Failed to save note order: " + extractErrorMessage(err));
+    }
+  };
+
+  const handleDropOnNote = async (e: React.DragEvent, targetNote: Note) => {
+    e.preventDefault();
+    const sourceId = e.dataTransfer.getData("text/plain") || draggedNoteId;
+    setDraggedNoteId(null);
+    setDragOverNoteId(null);
+
+    if (!sourceId || sourceId === targetNote.id || !selectedCourse) return;
+
+    const currentList = notes
+      .filter((n) => (n.module_id || null) === (targetNote.module_id || null))
+      .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
+
+    const sourceIndex = currentList.findIndex((n) => n.id === sourceId);
+    const targetIndex = currentList.findIndex((n) => n.id === targetNote.id);
+
+    if (sourceIndex === -1 || targetIndex === -1) return;
+
+    const updatedList = [...currentList];
+    const [removed] = updatedList.splice(sourceIndex, 1);
+    updatedList.splice(targetIndex, 0, removed);
+
+    const updates = updatedList.map((n, idx) => ({
+      id: n.id,
+      order_index: idx,
+      module_id: n.module_id || null,
+    }));
+
+    setNotes((prev) =>
+      prev.map((n) => {
+        const match = updates.find((u) => u.id === n.id);
+        return match ? { ...n, order_index: match.order_index } : n;
+      })
+    );
+
+    try {
+      await notesService.reorderNotes(selectedCourse.id, updates);
+    } catch (err) {
+      console.error("Failed to persist dragged note order:", err);
+      if (selectedCourse) loadSyllabus(selectedCourse.id);
+      alert("Failed to save note order: " + extractErrorMessage(err));
+    }
+  };
+
+  const handleConfirmMoveNote = async (note: Note, targetModId: string | null) => {
+    if (!selectedCourse) return;
+    const currentModId = note.module_id || null;
+    if (targetModId === currentModId) return;
+
+    const destNotes = notes.filter((n) => (n.module_id || null) === targetModId);
+    const maxOrder = destNotes.reduce((max, n) => Math.max(max, n.order_index ?? 0), -1);
+    const nextOrderIndex = maxOrder + 1;
+
+    try {
+      await notesService.updateNoteModule(note.id, targetModId, nextOrderIndex);
+      setNotes((prev) =>
+        prev.map((n) =>
+          n.id === note.id
+            ? { ...n, module_id: targetModId ?? undefined, order_index: nextOrderIndex }
+            : n
+        )
+      );
+    } catch (err) {
+      console.error("Failed to move note module:", err);
+      if (selectedCourse) loadSyllabus(selectedCourse.id);
+      alert("Failed to move note: " + extractErrorMessage(err));
+      throw err;
     }
   };
 
@@ -392,6 +520,16 @@ function StudioContent() {
 
                   {/* Actions */}
                   <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsEditCourseOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] dark:hover:bg-[#2C2A28] text-xs font-semibold text-[#2D2926] dark:text-[#E3DFD7] transition-colors"
+                      title="Edit Course Details"
+                    >
+                      <Pencil className="w-3.5 h-3.5 text-[#A85D44]" />
+                      <span>Edit Course</span>
+                    </button>
+
                     <Link
                       href={`/notes?course=${selectedCourse.id}`}
                       target="_blank"
@@ -495,7 +633,9 @@ function StudioContent() {
                   <div className="space-y-4">
                     {/* Render each module */}
                     {modules.map((mod) => {
-                      const moduleNotes = notes.filter((n) => n.module_id === mod.id);
+                      const moduleNotes = notes
+                        .filter((n) => n.module_id === mod.id)
+                        .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
                       const isEditing = editingModuleId === mod.id;
 
                       return (
@@ -585,13 +725,51 @@ function StudioContent() {
                             </p>
                           ) : (
                             <div className="space-y-1.5 pl-6 border-l-2 border-[#E8E3D9] dark:border-[#33312E] ml-2">
-                              {moduleNotes.map((note) => {
+                              {moduleNotes.map((note, noteIdx) => {
                                 const isEditingNote = editingNoteId === note.id;
 
                                 return (
                                   <div
                                     key={note.id}
-                                    className="flex items-center justify-between p-2 rounded-xl bg-[#FAF8F5] dark:bg-[#1C1B19] border border-[#E8E3D9]/60 dark:border-[#33312E]/60 hover:border-[#A85D44]/30 transition-all text-xs"
+                                    draggable={!isEditingNote}
+                                    onDragStart={(e) => {
+                                      e.dataTransfer.effectAllowed = "move";
+                                      e.dataTransfer.setData("text/plain", note.id);
+                                      setDraggedNoteId(note.id);
+                                    }}
+                                    onDragEnd={() => {
+                                      setDraggedNoteId(null);
+                                      setDragOverNoteId(null);
+                                    }}
+                                    onDragOver={(e) => {
+                                      e.preventDefault();
+                                      e.dataTransfer.dropEffect = "move";
+                                      if (draggedNoteId && draggedNoteId !== note.id) {
+                                        setDragOverNoteId(note.id);
+                                      }
+                                    }}
+                                    onDragLeave={() => {
+                                      if (dragOverNoteId === note.id) {
+                                        setDragOverNoteId(null);
+                                      }
+                                    }}
+                                    onDrop={(e) => handleDropOnNote(e, note)}
+                                    onDoubleClick={(e) => {
+                                      const target = e.target as HTMLElement;
+                                      if (
+                                        target.tagName.toLowerCase() === "input" ||
+                                        target.closest("button") ||
+                                        target.closest("a")
+                                      ) {
+                                        return;
+                                      }
+                                      setMovingNote(note);
+                                    }}
+                                    className={`flex items-center justify-between p-2 rounded-xl bg-[#FAF8F5] dark:bg-[#1C1B19] border transition-all text-xs group cursor-default ${
+                                      dragOverNoteId === note.id
+                                        ? "border-t-2 border-t-[#A85D44] border-[#A85D44]/50 bg-[#A85D44]/5 dark:bg-[#A85D44]/10"
+                                        : "border-[#E8E3D9]/60 dark:border-[#33312E]/60 hover:border-[#A85D44]/30"
+                                    } ${draggedNoteId === note.id ? "opacity-40" : ""}`}
                                   >
                                     {isEditingNote ? (
                                       <div className="flex items-center gap-2 flex-1 mr-2">
@@ -618,9 +796,48 @@ function StudioContent() {
                                         </button>
                                       </div>
                                     ) : (
-                                      <div className="flex items-center gap-2 min-w-0 mr-2">
-                                        <FileText className="w-3.5 h-3.5 text-[#A85D44] shrink-0" />
-                                        <span className="font-medium text-[#2D2926] dark:text-[#E3DFD7] truncate">
+                                      <div className="flex items-center gap-1.5 min-w-0 mr-2 flex-1">
+                                        {/* Drag handle */}
+                                        <div
+                                          title="Drag to reorder note"
+                                          className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded text-[#757069]/60 hover:text-[#2D2926] dark:hover:text-[#E3DFD7] hover:bg-[#E8E3D9]/50 dark:hover:bg-[#33312E]/50 shrink-0"
+                                        >
+                                          <GripVertical className="w-3.5 h-3.5" />
+                                        </div>
+
+                                        {/* Up / Down Reorder Buttons */}
+                                        <div className="flex flex-col shrink-0 -space-y-0.5">
+                                          <button
+                                            type="button"
+                                            disabled={noteIdx === 0}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleMoveNoteStep(note, "up");
+                                            }}
+                                            title="Move Up"
+                                            className="p-0.5 rounded hover:bg-[#E8E3D9]/60 dark:hover:bg-[#33312E]/60 text-[#757069] hover:text-[#A85D44] disabled:opacity-20 disabled:hover:text-[#757069] disabled:hover:bg-transparent transition-colors"
+                                          >
+                                            <ChevronUp className="w-3 h-3" />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            disabled={noteIdx === moduleNotes.length - 1}
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleMoveNoteStep(note, "down");
+                                            }}
+                                            title="Move Down"
+                                            className="p-0.5 rounded hover:bg-[#E8E3D9]/60 dark:hover:bg-[#33312E]/60 text-[#757069] hover:text-[#A85D44] disabled:opacity-20 disabled:hover:text-[#757069] disabled:hover:bg-transparent transition-colors"
+                                          >
+                                            <ChevronDown className="w-3 h-3" />
+                                          </button>
+                                        </div>
+
+                                        <FileText className="w-3.5 h-3.5 text-[#A85D44] shrink-0 ml-0.5" />
+                                        <span 
+                                          className="font-medium text-[#2D2926] dark:text-[#E3DFD7] truncate select-none"
+                                          title="Double-click to change module"
+                                        >
                                           {note.title}
                                         </span>
                                       </div>
@@ -642,10 +859,20 @@ function StudioContent() {
                                           href={`/notes?course=${selectedCourse.id}&note=${note.id}`}
                                           target="_blank"
                                           title="View in Reader"
-                                          className="p-1.5 rounded-lg text-[#757069] hover:text-[#2D2926] hover:bg-[#EFEBE3] transition-colors"
+                                          className="p-1.5 rounded-lg text-[#757069] hover:text-[#2D2926] hover:bg-[#EFEBE3] dark:hover:bg-[#2C2A28] transition-colors"
                                         >
                                           <ExternalLink className="w-3.5 h-3.5" />
                                         </Link>
+
+                                        {/* Move to another module */}
+                                        <button
+                                          type="button"
+                                          onClick={() => setMovingNote(note)}
+                                          title="Change module (or double-click row)"
+                                          className="p-1.5 rounded-lg text-[#757069] hover:text-[#A85D44] hover:bg-[#EFEBE3] dark:hover:bg-[#2C2A28] transition-colors"
+                                        >
+                                          <FolderInput className="w-3.5 h-3.5" />
+                                        </button>
 
                                         {/* Rename Note */}
                                         <button
@@ -655,7 +882,7 @@ function StudioContent() {
                                             setEditingNoteTitle(note.title);
                                           }}
                                           title="Rename Note"
-                                          className="p-1.5 rounded-lg text-[#757069] hover:text-[#A85D44] hover:bg-[#EFEBE3] transition-colors"
+                                          className="p-1.5 rounded-lg text-[#757069] hover:text-[#A85D44] hover:bg-[#EFEBE3] dark:hover:bg-[#2C2A28] transition-colors"
                                         >
                                           <Pencil className="w-3.5 h-3.5" />
                                         </button>
@@ -682,27 +909,54 @@ function StudioContent() {
 
                     {/* Unassigned notes (if any) */}
                     {(() => {
-                      const unassignedNotes = notes.filter((n) => !n.module_id);
+                      const unassignedNotes = notes
+                        .filter((n) => !n.module_id)
+                        .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0));
                       if (unassignedNotes.length === 0) return null;
 
                       return (
                         <div className="rounded-2xl border border-dashed border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5]/50 dark:bg-[#21201E]/50 p-4 sm:p-5 space-y-3">
-                          <h3 className="text-xs font-bold text-[#757069] uppercase tracking-wider">
-                            Unassigned Notes ({unassignedNotes.length})
-                          </h3>
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-xs font-bold text-[#757069] uppercase tracking-wider">
+                              Unassigned Notes ({unassignedNotes.length})
+                            </h3>
+                            <span className="text-[11px] text-[#757069] italic">
+                              Tip: Double-click or click &quot;Assign to Module&quot; to place notes into syllabus modules.
+                            </span>
+                          </div>
                           <div className="space-y-1.5">
                             {unassignedNotes.map((note) => (
                               <div
                                 key={note.id}
-                                className="flex items-center justify-between p-2 rounded-xl bg-[#FAF8F5] dark:bg-[#1C1B19] border border-[#E8E3D9] dark:border-[#33312E] text-xs"
+                                onDoubleClick={(e) => {
+                                  const target = e.target as HTMLElement;
+                                  if (
+                                    target.tagName.toLowerCase() === "input" ||
+                                    target.closest("button") ||
+                                    target.closest("a")
+                                  ) {
+                                    return;
+                                  }
+                                  setMovingNote(note);
+                                }}
+                                className="flex items-center justify-between p-2 rounded-xl bg-[#FAF8F5] dark:bg-[#1C1B19] border border-[#E8E3D9] dark:border-[#33312E] text-xs hover:border-[#A85D44]/40 transition-colors"
                               >
-                                <div className="flex items-center gap-2 min-w-0 mr-2">
+                                <div className="flex items-center gap-2 min-w-0 mr-2 flex-1">
                                   <FileText className="w-3.5 h-3.5 text-[#757069] shrink-0" />
-                                  <span className="font-medium text-[#2D2926] dark:text-[#E3DFD7] truncate">
+                                  <span className="font-medium text-[#2D2926] dark:text-[#E3DFD7] truncate select-none">
                                     {note.title}
                                   </span>
                                 </div>
-                                <div className="flex items-center gap-1 shrink-0">
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setMovingNote(note)}
+                                    title="Assign note to a module"
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-[#A85D44]/30 hover:border-[#A85D44] bg-[#A85D44]/10 hover:bg-[#A85D44]/15 text-[#A85D44] dark:text-[#C4785E] text-[11px] font-semibold transition-colors"
+                                  >
+                                    <FolderInput className="w-3 h-3" />
+                                    <span>Assign to Module</span>
+                                  </button>
                                   <Link
                                     href={`/edit?note=${note.id}`}
                                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] text-white text-[11px] font-semibold transition-colors"
@@ -763,6 +1017,15 @@ function StudioContent() {
       )}
 
       {selectedCourse && (
+        <EditCourseModal
+          isOpen={isEditCourseOpen}
+          onClose={() => setIsEditCourseOpen(false)}
+          course={selectedCourse}
+          onCourseUpdated={handleCourseUpdated}
+        />
+      )}
+
+      {selectedCourse && (
         <CreateModuleModal
           isOpen={isCreateModuleOpen}
           onClose={() => setIsCreateModuleOpen(false)}
@@ -781,6 +1044,16 @@ function StudioContent() {
           modules={modules}
           defaultModuleId={targetModuleIdForNote}
           onNoteCreated={(newNote) => setNotes((prev) => [...prev, newNote])}
+        />
+      )}
+
+      {selectedCourse && (
+        <MoveNoteModal
+          isOpen={movingNote !== null}
+          onClose={() => setMovingNote(null)}
+          note={movingNote}
+          modules={modules}
+          onConfirmMove={handleConfirmMoveNote}
         />
       )}
 

@@ -81,6 +81,17 @@ export function PdfPageView({
 
     const render = async () => {
       try {
+        if (isCancelled) return;
+
+        // Verify page and worker transport are alive
+        if (
+          page.destroyed ||
+          !(page as any)._transport ||
+          !(page as any)._transport.messageHandler
+        ) {
+          return;
+        }
+
         const outputScale = window.devicePixelRatio || 1;
         const currentViewport = page.getViewport({ scale });
 
@@ -91,7 +102,16 @@ export function PdfPageView({
         canvas.style.height = `${Math.floor(currentViewport.height)}px`;
 
         const ctx = canvas.getContext("2d");
-        if (!ctx) return;
+        if (!ctx || isCancelled) return;
+
+        // Re-verify transport right before render invocation
+        if (
+          page.destroyed ||
+          !(page as any)._transport ||
+          !(page as any)._transport.messageHandler
+        ) {
+          return;
+        }
 
         renderTask = page.render({
           canvasContext: ctx,
@@ -109,6 +129,14 @@ export function PdfPageView({
         textLayerDiv.style.height = `${Math.floor(currentViewport.height)}px`;
         textLayerDiv.style.setProperty("--scale-factor", `${currentViewport.scale}`);
 
+        if (
+          page.destroyed ||
+          !(page as any)._transport ||
+          !(page as any)._transport.messageHandler
+        ) {
+          return;
+        }
+
         const textContent = await page.getTextContent();
         if (isCancelled) return;
 
@@ -123,9 +151,18 @@ export function PdfPageView({
           setIsRendered(true);
         }
       } catch (err: any) {
-        if (err?.name !== "RenderingCancelledException") {
-          console.error(`Error rendering PDF page ${pageNumber}:`, err);
+        if (
+          isCancelled ||
+          err?.name === "RenderingCancelledException" ||
+          err?.message?.includes("sendWithPromise") ||
+          err?.message?.includes("Worker was terminated") ||
+          err?.message?.includes("destroyed") ||
+          err?.message?.includes("cancelled")
+        ) {
+          // Teardown, cancellation, or page switch in progress
+          return;
         }
+        console.error(`Error rendering PDF page ${pageNumber}:`, err);
       }
     };
 

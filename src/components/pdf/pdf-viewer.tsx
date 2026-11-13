@@ -72,18 +72,30 @@ export function PdfViewer({
 
         loadingTask = pdfjs.getDocument(sourceParam);
         const pdfDoc = await loadingTask.promise;
-        if (isCancelled) return;
+        if (isCancelled) {
+          loadingTask.destroy().catch(() => {});
+          return;
+        }
 
         setDoc(pdfDoc);
 
         const loadedPages: PDFPageProxy[] = [];
         for (let i = 1; i <= pdfDoc.numPages; i++) {
+          if (isCancelled) {
+            loadingTask.destroy().catch(() => {});
+            return;
+          }
           const page = await pdfDoc.getPage(i);
-          if (isCancelled) return;
+          if (isCancelled) {
+            loadingTask.destroy().catch(() => {});
+            return;
+          }
           loadedPages.push(page);
         }
 
-        setPages(loadedPages);
+        if (!isCancelled) {
+          setPages(loadedPages);
+        }
       } catch (err: any) {
         if (!isCancelled) {
           console.error("Failed to load PDF:", err);
@@ -245,9 +257,11 @@ export function PdfViewer({
             scale,
           };
 
+          const docKey = (doc as any)?.fingerprints?.[0] || (typeof pdfSource === "string" ? pdfSource : "doc");
+
           return (
             <PdfPageView
-              key={pageNum}
+              key={`${docKey}-page-${pageNum}`}
               page={page}
               pageNumber={pageNum}
               scale={scale}
