@@ -149,6 +149,42 @@ export function pointsToSvgPath(points: AnnotationPoint[]): string {
   return d;
 }
 
+export function getAnnotationCursor(tool: AnnotationTool, color: string): string {
+  const encodedColor = (color || "#A85D44").replace("#", "%23");
+
+  if (tool === "pen") {
+    // High-contrast dual-tone reticle with active ink color in center
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><circle cx='12' cy='12' r='6' fill='none' stroke='white' stroke-width='3.5' opacity='0.95'/><circle cx='12' cy='12' r='6' fill='none' stroke='%2318181B' stroke-width='1.5'/><circle cx='12' cy='12' r='2.5' fill='${encodedColor}' stroke='white' stroke-width='0.8'/></svg>`;
+    return `url("data:image/svg+xml,${svg}") 12 12, crosshair`;
+  }
+
+  if (tool === "highlighter") {
+    // High-contrast highlighter reticle with wider stroke ring and translucent center
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><circle cx='12' cy='12' r='8' fill='none' stroke='white' stroke-width='3.5' opacity='0.95'/><circle cx='12' cy='12' r='8' fill='none' stroke='%2318181B' stroke-width='1.5'/><circle cx='12' cy='12' r='4' fill='${encodedColor}' fill-opacity='0.6' stroke='white' stroke-width='0.8'/></svg>`;
+    return `url("data:image/svg+xml,${svg}") 12 12, crosshair`;
+  }
+
+  if (tool === "text") {
+    // High-contrast dual-tone I-beam (visible on light, dark, and colored slides)
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path d='M8 3h8M12 3v18M8 21h8' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/><path d='M8 3h8M12 3v18M8 21h8' stroke='%2318181B' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/></svg>`;
+    return `url("data:image/svg+xml,${svg}") 12 11, text`;
+  }
+
+  if (tool === "eraser") {
+    // High-contrast dual-tone eraser icon with red accent
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path d='m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21' fill='%23F87171' fill-opacity='0.3' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/><path d='m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21' fill='none' stroke='%23EF4444' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/><path d='M22 21H7' stroke='white' stroke-width='3.5' stroke-linecap='round'/><path d='M22 21H7' stroke='%2318181B' stroke-width='1.5' stroke-linecap='round'/></svg>`;
+    return `url("data:image/svg+xml,${svg}") 6 18, pointer`;
+  }
+
+  if (isShapeTool(tool) || tool === "underline") {
+    // High-contrast dual-tone crosshair with precision center dot
+    const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'><path d='M12 2v20M2 12h20' stroke='white' stroke-width='3.5' stroke-linecap='round'/><path d='M12 2v20M2 12h20' stroke='%2318181B' stroke-width='1.5' stroke-linecap='round'/><circle cx='12' cy='12' r='2' fill='white'/><circle cx='12' cy='12' r='1' fill='%2318181B'/></svg>`;
+    return `url("data:image/svg+xml,${svg}") 12 12, crosshair`;
+  }
+
+  return "default";
+}
+
 export function AnnotationLayer({
   noteId,
   pageNumber,
@@ -781,9 +817,14 @@ export function AnnotationLayer({
     const clickX = (e.clientX - rect.left) / currentScale;
     const clickY = (e.clientY - rect.top) / currentScale;
 
+    // Offset by internal container padding (8pt) so typing/cursor starts exactly at the clicked point
+    const paddingOffset = 8;
+    const rawX = clickX - paddingOffset;
+    const rawY = clickY - paddingOffset;
+
     const defaultWidth = 220;
-    const boundedX = Math.max(10, Math.min(effectiveIntrinsicWidth - defaultWidth - 10, Math.round(clickX)));
-    const boundedY = Math.max(10, Math.round(clickY));
+    const boundedX = Math.max(0, Math.min(effectiveIntrinsicWidth - defaultWidth, Math.round(rawX)));
+    const boundedY = Math.max(0, Math.round(rawY));
 
     const cleanedBoxes = textBoxes.filter((b) =>
       b.id === activeTextId ? b.text.trim().length > 0 : true
@@ -800,6 +841,7 @@ export function AnnotationLayer({
       fontSize: 14,
       bold: false,
       italic: false,
+      hasBorder: false,
     };
 
     updateTextBoxes([...cleanedBoxes, newBox]);
@@ -821,14 +863,18 @@ export function AnnotationLayer({
 
   const isInteractive = true;
   const activeShape = shapes.find((s) => s.id === activeShapeId) || null;
+  const annotationCursor = getAnnotationCursor(tool, color);
 
   return (
     <div
       ref={containerRef}
       onPointerDown={handleContainerPointerDown}
+      style={{
+        cursor: tool === "text" ? annotationCursor : undefined,
+      }}
       className={`absolute inset-0 w-full h-full bg-transparent ${
         isInteractive ? "pointer-events-auto" : "pointer-events-none"
-      } ${tool === "text" ? "cursor-text" : ""} ${className}`}
+      } ${className}`}
     >
       {/* Vector SVG Layer for Pen, Highlighter, and Underlines */}
       <svg
@@ -840,14 +886,13 @@ export function AnnotationLayer({
         onPointerUp={handleSvgPointerUp}
         onPointerCancel={handleSvgPointerUp}
         className={`absolute inset-0 w-full h-full select-none ${
-          isDrawingTool
-            ? "cursor-crosshair pointer-events-auto"
-            : tool === "eraser"
-            ? "cursor-pointer pointer-events-auto"
+          isDrawingTool || tool === "eraser"
+            ? "pointer-events-auto"
             : "pointer-events-none"
         }`}
         style={{
           touchAction: isDrawingTool ? "none" : "auto",
+          cursor: isDrawingTool || tool === "eraser" ? annotationCursor : "default",
         }}
       >
         <defs>
@@ -951,6 +996,7 @@ export function AnnotationLayer({
             key={box.id}
             box={box}
             scale={currentScale}
+            pageWidth={effectiveIntrinsicWidth * currentScale}
             tool={tool}
             isSelected={activeTextId === box.id}
             onSelect={() => {
@@ -972,6 +1018,7 @@ export function AnnotationLayer({
           <ShapeSelectionFrame
             shape={activeShape}
             scale={currentScale}
+            pageWidth={effectiveIntrinsicWidth * currentScale}
             onDeselect={() => setActiveShapeId(null)}
             onUpdate={(updates) => handleUpdateShape(activeShape.id, updates)}
             onDelete={() => handleDeleteShape(activeShape.id)}
@@ -985,6 +1032,7 @@ export function AnnotationLayer({
 interface WordDocsTextBoxItemProps {
   box: AnnotationTextBox;
   scale: number;
+  pageWidth?: number;
   tool: AnnotationTool;
   isSelected: boolean;
   onSelect: () => void;
@@ -996,6 +1044,7 @@ interface WordDocsTextBoxItemProps {
 function WordDocsTextBoxItem({
   box,
   scale,
+  pageWidth,
   tool,
   isSelected,
   onSelect,
@@ -1111,6 +1160,13 @@ function WordDocsTextBoxItem({
     return null;
   }
 
+  const MIN_TEXT_BAR_WIDTH = 150;
+  const isNarrowText = screenWidth < MIN_TEXT_BAR_WIDTH;
+  const idealTextLeft = isNarrowText ? Math.round((screenWidth - MIN_TEXT_BAR_WIDTH) / 2) : 0;
+  const textBarLeft = pageWidth
+    ? Math.max(4 - screenLeft, Math.min(pageWidth - screenLeft - MIN_TEXT_BAR_WIDTH - 4, idealTextLeft))
+    : idealTextLeft;
+
   return (
     <div
       style={{
@@ -1152,14 +1208,29 @@ function WordDocsTextBoxItem({
       >
         {/* Top Floating Docs Action Bar when Selected */}
         {isSelected && (
-          <div className="print:hidden absolute -top-8 left-0 right-0 flex items-center justify-between px-2 py-0.5 rounded-md bg-[#2D2926] dark:bg-[#FAF8F5] text-white dark:text-[#21201E] text-[11px] shadow-md z-40 select-none">
+          <div
+            style={{
+              position: "absolute",
+              top: "-32px",
+              ...(isNarrowText
+                ? {
+                    left: `${textBarLeft}px`,
+                    width: `${MIN_TEXT_BAR_WIDTH}px`,
+                  }
+                : {
+                    left: 0,
+                    right: 0,
+                  }),
+            }}
+            className="print:hidden flex items-center justify-between px-2 py-0.5 rounded-md bg-[#2D2926] dark:bg-[#FAF8F5] text-white dark:text-[#21201E] text-[11px] shadow-md z-40 select-none"
+          >
             {/* Drag frame handle */}
             <div
               onPointerDown={handleFrameDragStart}
               onPointerMove={handleFrameDragMove}
               onPointerUp={handleFrameDragEnd}
               onPointerCancel={handleFrameDragEnd}
-              className="flex items-center gap-1 cursor-move hover:opacity-80 py-0.5"
+              className="flex items-center gap-1 cursor-move hover:opacity-80 py-0.5 shrink-0"
               title="Click and drag to move text box"
             >
               <Move className="w-3 h-3" />
@@ -1167,8 +1238,8 @@ function WordDocsTextBoxItem({
             </div>
 
             {/* Size indicator & Done/Delete buttons */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] opacity-75 font-mono">{boxWidth}pt</span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[10px] opacity-75 font-mono whitespace-nowrap">{boxWidth}pt</span>
               <button
                 type="button"
                 onPointerDown={(e) => e.stopPropagation()}
@@ -1176,7 +1247,7 @@ function WordDocsTextBoxItem({
                   e.stopPropagation();
                   onDelete();
                 }}
-                className="p-1 rounded hover:bg-red-600 hover:text-white transition-colors cursor-pointer"
+                className="p-1 rounded hover:bg-red-600 hover:text-white transition-colors cursor-pointer shrink-0"
                 title="Delete text box"
               >
                 <Trash2 className="w-3 h-3" />
@@ -1192,7 +1263,7 @@ function WordDocsTextBoxItem({
                     onDeselect();
                   }
                 }}
-                className="p-1 rounded hover:bg-emerald-600 hover:text-white transition-colors cursor-pointer"
+                className="p-1 rounded hover:bg-emerald-600 hover:text-white transition-colors cursor-pointer shrink-0"
                 title="Deselect and save"
               >
                 <Check className="w-3 h-3" />
@@ -1287,6 +1358,7 @@ function WordDocsTextBoxItem({
 interface ShapeSelectionFrameProps {
   shape: AnnotationShape;
   scale: number;
+  pageWidth?: number;
   onDeselect: () => void;
   onUpdate: (updates: Partial<AnnotationShape>) => void;
   onDelete: () => void;
@@ -1295,6 +1367,7 @@ interface ShapeSelectionFrameProps {
 function ShapeSelectionFrame({
   shape,
   scale,
+  pageWidth,
   onDeselect,
   onUpdate,
   onDelete,
@@ -1333,6 +1406,13 @@ function ShapeSelectionFrame({
   const screenTop = Math.round(minY * scale);
   const screenWidth = Math.round(width * scale);
   const screenHeight = Math.round(height * scale);
+
+  const MIN_ACTION_BAR_WIDTH = 168;
+  const isNarrow = screenWidth < MIN_ACTION_BAR_WIDTH;
+  const idealBarLeft = isNarrow ? Math.round((screenWidth - MIN_ACTION_BAR_WIDTH) / 2) : 0;
+  const barLeft = pageWidth
+    ? Math.max(4 - screenLeft, Math.min(pageWidth - screenLeft - MIN_ACTION_BAR_WIDTH - 4, idealBarLeft))
+    : idealBarLeft;
 
   // Move drag interaction
   const handleMoveStart = (e: React.PointerEvent) => {
@@ -1465,14 +1545,29 @@ function ShapeSelectionFrame({
       <div className="absolute inset-0 border-2 border-dashed border-[#2563EB] dark:border-[#3B82F6] ring-1 ring-white/90 dark:ring-stone-900/90 rounded-xs pointer-events-none shadow-[0_0_0_1px_rgba(37,99,235,0.3)]" />
 
       {/* Top Floating Action Bar */}
-      <div className="print:hidden absolute -top-8 left-0 right-0 flex items-center justify-between px-2 py-0.5 rounded-md bg-[#2D2926] dark:bg-[#FAF8F5] text-white dark:text-[#21201E] text-[11px] shadow-md z-40 select-none pointer-events-auto">
+      <div
+        style={{
+          position: "absolute",
+          top: "-32px",
+          ...(isNarrow
+            ? {
+                left: `${barLeft}px`,
+                width: `${MIN_ACTION_BAR_WIDTH}px`,
+              }
+            : {
+                left: 0,
+                right: 0,
+              }),
+        }}
+        className="print:hidden flex items-center justify-between px-2 py-0.5 rounded-md bg-[#2D2926] dark:bg-[#FAF8F5] text-white dark:text-[#21201E] text-[11px] shadow-md z-40 select-none pointer-events-auto"
+      >
         {/* Move handle */}
         <div
           onPointerDown={handleMoveStart}
           onPointerMove={handleMoveMove}
           onPointerUp={handleMoveEnd}
           onPointerCancel={handleMoveEnd}
-          className="flex items-center gap-1 cursor-move hover:opacity-80 py-0.5"
+          className="flex items-center gap-1 cursor-move hover:opacity-80 py-0.5 shrink-0"
           title="Click and drag to move shape"
         >
           <Move className="w-3 h-3" />
@@ -1480,8 +1575,8 @@ function ShapeSelectionFrame({
         </div>
 
         {/* Size indicator & Done / Delete buttons */}
-        <div className="flex items-center gap-1.5">
-          <span className="text-[10px] opacity-75 font-mono">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[10px] opacity-75 font-mono whitespace-nowrap">
             {Math.round(width)}×{Math.round(height)}pt
           </span>
           <button
@@ -1491,7 +1586,7 @@ function ShapeSelectionFrame({
               e.stopPropagation();
               onDelete();
             }}
-            className="p-1 rounded hover:bg-red-600 hover:text-white transition-colors cursor-pointer"
+            className="p-1 rounded hover:bg-red-600 hover:text-white transition-colors cursor-pointer shrink-0"
             title="Delete shape"
           >
             <Trash2 className="w-3 h-3" />
@@ -1503,7 +1598,7 @@ function ShapeSelectionFrame({
               e.stopPropagation();
               onDeselect();
             }}
-            className="p-1 rounded hover:bg-emerald-600 hover:text-white transition-colors cursor-pointer"
+            className="p-1 rounded hover:bg-emerald-600 hover:text-white transition-colors cursor-pointer shrink-0"
             title="Deselect shape"
           >
             <Check className="w-3 h-3" />
