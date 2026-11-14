@@ -221,6 +221,20 @@ export function AnnotationToolbar({
             <Italic className="w-3.5 h-3.5" />
           </button>
 
+          {/* Border outline toggle */}
+          <button
+            type="button"
+            onClick={() => onUpdateActiveTextBox?.({ hasBorder: !activeTextBox.hasBorder })}
+            className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+              activeTextBox.hasBorder
+                ? "bg-[#A85D44] text-white shadow-xs"
+                : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
+            }`}
+            title={activeTextBox.hasBorder ? "Border outline enabled (click to remove)" : "Border outline disabled (click to add)"}
+          >
+            <Square className="w-3.5 h-3.5" />
+          </button>
+
           <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
 
           {/* Font size selector */}

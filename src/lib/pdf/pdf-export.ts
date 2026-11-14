@@ -384,15 +384,17 @@ export async function exportAnnotatedPdf({
       // Bottom-left Y in PDF coordinate system
       const pdfY = pageHeight - box.y - boxHeight;
 
-      // Transparent Card Frame with Subtle Border
-      page.drawRectangle({
-        x: box.x,
-        y: Math.max(0, pdfY),
-        width: boxWidth,
-        height: boxHeight,
-        borderColor: rgb(parsedColor.r, parsedColor.g, parsedColor.b),
-        borderWidth: 1,
-      });
+      // Transparent Card Frame with Subtle Border (optional, default borderless)
+      if (box.hasBorder) {
+        page.drawRectangle({
+          x: box.x,
+          y: Math.max(0, pdfY),
+          width: boxWidth,
+          height: boxHeight,
+          borderColor: rgb(parsedColor.r, parsedColor.g, parsedColor.b),
+          borderWidth: 1,
+        });
+      }
 
       // Multiline text lines
       for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {

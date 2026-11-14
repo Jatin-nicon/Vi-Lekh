@@ -39,7 +39,7 @@ The reader view SHALL provide a sticky non-scrolling toolbar pinned at the top o
 
 #### Scenario: Dynamic text styling toolbar
 - **WHEN** a user selects or focuses an annotation text box
-- **THEN** the sticky toolbar dynamically transforms into text styling mode offering Done, Bold toggle, Italic toggle, Font Size dropdown/pills (12pt, 14pt, 18pt, 24pt), color palette, and delete box controls
+- **THEN** the sticky toolbar dynamically transforms into text styling mode offering Done, Bold toggle, Italic toggle, Border outline toggle, Font Size dropdown/pills (12pt, 14pt, 18pt, 24pt), color palette, and delete box controls
 
 #### Scenario: Dynamic shape styling toolbar
 - **WHEN** a user completes drawing a new shape or clicks to select an existing shape
@@ -69,7 +69,7 @@ The system SHALL provide an interactive SVG vector overlay bounded to each indiv
 - **THEN** the system renders a live vector shape preview during drag and commits the finished shape with transparent interior styling and active color swatch upon pointer release
 
 #### Scenario: Select and move geometric shapes
-- **WHEN** a user clicks on an existing shape on a PDF page
+- **WHEN** a user clicks anywhere within the bounded interior area of an existing closed shape (rectangle, circle, star, cloud) or within the proximity buffer of an open shape (line, arrow) on a PDF page
 - **THEN** the system activates that shape displaying a high-visibility bounding selection frame (with contrasting halo outline) and 4 corner resize anchors styled with solid accent fill, white halo border, and elevation shadow to prevent blending into white PDF pages or dark backgrounds, and dragging the move handle repositions the shape in real time
 
 #### Scenario: Resize geometric shapes
@@ -101,11 +101,15 @@ The system SHALL allow users to click anywhere on a PDF page canvas to insert, t
 
 #### Scenario: Render text boxes in PDF export
 - **WHEN** a user triggers PDF export
-- **THEN** the system bakes the typed text boxes with a 100% transparent background (without opaque fill) into the target PDF page vector stream at exact page coordinates, ensuring underlying slide content remains fully visible
+- **THEN** the system bakes the typed text boxes with a 100% transparent background into the target PDF page vector stream at exact page coordinates, drawing an enclosing rectangular border outline only when `hasBorder` is explicitly enabled on the text box and omitting the outline by default, ensuring underlying slide content remains fully visible
 
 #### Scenario: Text box typography formatting
 - **WHEN** a user toggles bold, italic, or adjusts font size for an active text box
 - **THEN** the system immediately updates the text box typography onscreen and preserves these properties in storage
+
+#### Scenario: Text box border styling toggle
+- **WHEN** a user toggles the border outline option for an active text box
+- **THEN** the system updates the text box border appearance onscreen and preserves the `hasBorder` state in storage, defaulting to false (borderless)
 
 ### Requirement: Browser-session annotation caching
 The system SHALL save active annotations, geometric shapes, and typed text boxes to browser storage for the current note and restore them automatically upon page reload.

@@ -42,6 +42,7 @@ export interface AnnotationTextBox {
   fontSize?: number; // 12, 14, 18, 24 (default 14)
   bold?: boolean;
   italic?: boolean;
+  hasBorder?: boolean;
 }
 
 export interface AnnotationLayerProps {
@@ -586,20 +587,14 @@ export function AnnotationLayer({
     const fillVal =
       shape.fillOpacity && shape.fillOpacity > 0
         ? shape.color
-        : isEraser
-        ? "transparent"
-        : "none";
+        : isPreview
+        ? "none"
+        : "transparent";
     const fillOpacityVal =
       shape.fillOpacity && shape.fillOpacity > 0 ? shape.fillOpacity : undefined;
     const strokeWidthVal = shape.width || 2;
     const strokeColorVal = shape.color;
-    const pointerEventsVal = isPreview
-      ? "none"
-      : isEraser
-      ? "all"
-      : shape.fillOpacity && shape.fillOpacity > 0
-      ? "all"
-      : "stroke";
+    const pointerEventsVal = isPreview ? "none" : "all";
 
     switch (shape.type) {
       case "rectangle": {
@@ -649,36 +644,59 @@ export function AnnotationLayer({
       }
       case "line": {
         return (
-          <line
-            key={shape.id}
-            x1={shape.startX}
-            y1={shape.startY}
-            x2={shape.endX}
-            y2={shape.endY}
-            stroke={strokeColorVal}
-            strokeWidth={strokeWidthVal}
-            strokeLinecap="round"
-            strokeDasharray={isPreview ? "4 3" : undefined}
-            pointerEvents={isPreview ? "none" : "stroke"}
-            {...eraserProps}
-          />
+          <g key={shape.id} {...eraserProps}>
+            {!isPreview && (
+              <line
+                x1={shape.startX}
+                y1={shape.startY}
+                x2={shape.endX}
+                y2={shape.endY}
+                stroke="transparent"
+                strokeWidth={Math.max(16, strokeWidthVal + 12)}
+                strokeLinecap="round"
+                pointerEvents="stroke"
+              />
+            )}
+            <line
+              x1={shape.startX}
+              y1={shape.startY}
+              x2={shape.endX}
+              y2={shape.endY}
+              stroke={strokeColorVal}
+              strokeWidth={strokeWidthVal}
+              strokeLinecap="round"
+              strokeDasharray={isPreview ? "4 3" : undefined}
+              pointerEvents={isPreview ? "none" : "stroke"}
+            />
+          </g>
         );
       }
       case "arrow": {
         const pathData = arrowToSvgPath(shape.startX, shape.startY, shape.endX, shape.endY);
         return (
-          <path
-            key={shape.id}
-            d={pathData}
-            fill="none"
-            stroke={strokeColorVal}
-            strokeWidth={strokeWidthVal}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray={isPreview ? "4 3" : undefined}
-            pointerEvents={isPreview ? "none" : "stroke"}
-            {...eraserProps}
-          />
+          <g key={shape.id} {...eraserProps}>
+            {!isPreview && (
+              <path
+                d={pathData}
+                fill="none"
+                stroke="transparent"
+                strokeWidth={Math.max(16, strokeWidthVal + 12)}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                pointerEvents="stroke"
+              />
+            )}
+            <path
+              d={pathData}
+              fill="none"
+              stroke={strokeColorVal}
+              strokeWidth={strokeWidthVal}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeDasharray={isPreview ? "4 3" : undefined}
+              pointerEvents={isPreview ? "none" : "stroke"}
+            />
+          </g>
         );
       }
       case "star": {
@@ -1127,7 +1145,9 @@ function WordDocsTextBoxItem({
             ? "border-2 border-dashed border-red-500 bg-red-50/50 dark:bg-red-950/40 shadow-sm"
             : isSelected
             ? "border-1.5 border-[#2563EB] dark:border-[#3B82F6] bg-transparent shadow-sm ring-2 ring-[#2563EB]/20"
-            : "border border-dashed border-stone-300/60 dark:border-stone-700/60 bg-transparent hover:border-[#A85D44]"
+            : box.hasBorder
+            ? "border border-solid border-stone-300 dark:border-stone-700 bg-transparent hover:border-[#A85D44]"
+            : "border border-transparent bg-transparent hover:border-dashed hover:border-stone-300/60 dark:hover:border-stone-700/60"
         }`}
       >
         {/* Top Floating Docs Action Bar when Selected */}
