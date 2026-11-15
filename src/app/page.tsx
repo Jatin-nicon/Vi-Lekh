@@ -72,7 +72,7 @@ function CoursesContent() {
   return (
     <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] flex flex-col font-sans transition-colors">
       {/* Top Navbar */}
-      <header className="h-16 border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/95 dark:bg-[#181716]/95 backdrop-blur sticky top-0 z-40 px-4 sm:px-6">
+      <header className="h-16 border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/95 dark:bg-[#181716]/95 backdrop-blur sticky top-0 z-50 px-4 sm:px-6">
         <div className="max-w-7xl mx-auto h-full flex items-center justify-between">
           {/* Logo & Brand */}
           <div className="flex items-center gap-3">
