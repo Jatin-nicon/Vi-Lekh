@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   MousePointer2,
   Pen,
@@ -145,12 +146,21 @@ export function AnnotationToolbar({
   shapeFillOpacity = 0.0,
   onSelectShapeFillOpacity,
 }: AnnotationToolbarProps) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const [isShapesOpen, setIsShapesOpen] = useState(false);
   const [activeShapeType, setActiveShapeType] = useState<ShapeType>("rectangle");
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const shapesMenuRef = useRef<HTMLDivElement>(null);
+  const [shapesCoords, setShapesCoords] = useState<{ top: number; left: number } | null>(null);
 
   const [isPenOpen, setIsPenOpen] = useState(false);
   const penDropdownRef = useRef<HTMLDivElement>(null);
+  const penMenuRef = useRef<HTMLDivElement>(null);
+  const [penCoords, setPenCoords] = useState<{ top: number; left: number } | null>(null);
 
   const isShapeActive = SHAPE_DEFINITIONS.some((s) => s.type === tool);
   const currentShapeType: ShapeType = isShapeActive ? (tool as ShapeType) : activeShapeType;
@@ -162,21 +172,96 @@ export function AnnotationToolbar({
     }
   }, [tool]);
 
+  const updatePenPosition = useCallback(() => {
+    if (penDropdownRef.current && typeof window !== "undefined") {
+      const rect = penDropdownRef.current.getBoundingClientRect();
+      const popoverWidth = 155;
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - popoverWidth - 8));
+      setPenCoords({
+        top: rect.bottom + 6,
+        left,
+      });
+    }
+  }, []);
+
+  const togglePenDropdown = useCallback(() => {
+    setIsShapesOpen(false);
+    if (tool !== "pen") {
+      onSelectTool("pen");
+    }
+    setIsPenOpen((prev) => {
+      if (!prev) {
+        updatePenPosition();
+        return true;
+      }
+      return false;
+    });
+  }, [tool, onSelectTool, updatePenPosition]);
+
+  const updateShapesPosition = useCallback(() => {
+    if (dropdownRef.current && typeof window !== "undefined") {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      const popoverWidth = 175;
+      const left = Math.max(8, Math.min(rect.left, window.innerWidth - popoverWidth - 8));
+      setShapesCoords({
+        top: rect.bottom + 6,
+        left,
+      });
+    }
+  }, []);
+
+  const toggleShapesDropdown = useCallback(() => {
+    setIsPenOpen(false);
+    if (!isShapeActive) {
+      onSelectTool(activeShapeType);
+    }
+    setIsShapesOpen((prev) => {
+      if (!prev) {
+        updateShapesPosition();
+        return true;
+      }
+      return false;
+    });
+  }, [isShapeActive, activeShapeType, onSelectTool, updateShapesPosition]);
+
   useEffect(() => {
     if (!isShapesOpen && !isPenOpen) return;
-    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+
+    const handlePointerDown = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (
+        isShapesOpen &&
+        dropdownRef.current &&
+        !dropdownRef.current.contains(target) &&
+        shapesMenuRef.current &&
+        !shapesMenuRef.current.contains(target)
+      ) {
         setIsShapesOpen(false);
       }
-      if (penDropdownRef.current && !penDropdownRef.current.contains(e.target as Node)) {
+      if (
+        isPenOpen &&
+        penDropdownRef.current &&
+        !penDropdownRef.current.contains(target) &&
+        penMenuRef.current &&
+        !penMenuRef.current.contains(target)
+      ) {
         setIsPenOpen(false);
       }
     };
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("touchstart", handleClickOutside);
+
+    const handleScrollOrResize = () => {
+      setIsShapesOpen(false);
+      setIsPenOpen(false);
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown, { capture: true });
+    window.addEventListener("scroll", handleScrollOrResize, { passive: true });
+    window.addEventListener("resize", handleScrollOrResize, { passive: true });
+
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("touchstart", handleClickOutside);
+      window.removeEventListener("pointerdown", handlePointerDown, { capture: true });
+      window.removeEventListener("scroll", handleScrollOrResize);
+      window.removeEventListener("resize", handleScrollOrResize);
     };
   }, [isShapesOpen, isPenOpen]);
 
@@ -431,7 +516,13 @@ export function AnnotationToolbar({
       className={`print:hidden sticky top-16 z-20 max-w-[calc(100vw-1.5rem)] sm:max-w-fit mx-auto pt-2 transition-all ${className}`}
     >
       <div className="relative">
-        <div className="flex items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-full bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-[0_4px_20px_rgba(45,41,38,0.12)] text-xs text-[#2D2926] dark:text-[#E3DFD7] overflow-x-auto no-scrollbar flex-nowrap">
+        <div
+          onScroll={() => {
+            if (isShapesOpen) setIsShapesOpen(false);
+            if (isPenOpen) setIsPenOpen(false);
+          }}
+          className="flex items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-full bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-[0_4px_20px_rgba(45,41,38,0.12)] text-xs text-[#2D2926] dark:text-[#E3DFD7] overflow-x-auto no-scrollbar flex-nowrap"
+        >
         {/* Tool: Read / Cursor Mode (Neutral - Scroll & Pinch-Zoom without drawing) */}
         <button
           type="button"
@@ -448,8 +539,15 @@ export function AnnotationToolbar({
           <span className="hidden md:inline">Read</span>
         </button>
 
-        {/* Tool: Pen Dropdown Popover */}
-        <div className="relative shrink-0 flex items-center" ref={penDropdownRef}>
+        {/* Tool: Pen with Dropdown */}
+        <div
+          ref={penDropdownRef}
+          className={`relative shrink-0 flex items-center rounded-full transition-colors ${
+            tool === "pen"
+              ? "bg-[#A85D44] text-white shadow-xs"
+              : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
+          }`}
+        >
           <button
             type="button"
             onClick={() => {
@@ -460,75 +558,29 @@ export function AnnotationToolbar({
                 onSelectTool("pen");
               }
             }}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer ${
-              tool === "pen"
-                ? "bg-[#A85D44] text-white shadow-xs"
-                : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
-            }`}
+            className="flex items-center gap-1 pl-2.5 pr-1 py-1.5 rounded-l-full font-medium cursor-pointer"
             title={tool === "pen" ? "Pen active (click to deselect)" : "Freehand Pen"}
-            aria-expanded={isPenOpen}
           >
             <Pen className="w-3.5 h-3.5" />
             <span className="hidden md:inline">Pen</span>
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (tool !== "pen") onSelectTool("pen");
-                setIsPenOpen((prev) => !prev);
-              }}
-              className="p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10"
-              title="Select pen width"
-            >
-              <ChevronDown className={`w-3 h-3 transition-transform ${isPenOpen ? "rotate-180" : ""}`} />
-            </span>
           </button>
-
-          {isPenOpen && (
-            <div className="absolute top-full mt-2 left-0 z-50 min-w-[145px] p-1.5 rounded-xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-lg flex flex-col gap-0.5 animate-in fade-in-0 zoom-in-95 duration-100">
-              <div className="px-2 py-1 text-[10px] font-semibold tracking-wider uppercase text-stone-500 dark:text-stone-400">
-                Pen Width
-              </div>
-              {PEN_STROKE_WIDTHS.map((pw) => {
-                const isSelected = (penWidth || 2.5) === pw.value;
-                return (
-                  <button
-                    key={pw.value}
-                    type="button"
-                    onClick={() => {
-                      onSelectPenWidth?.(pw.value);
-                      onSelectTool("pen");
-                      setIsPenOpen(false);
-                    }}
-                    className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer text-left ${
-                      isSelected
-                        ? "bg-[#A85D44] text-white"
-                        : "text-[#2D2926] dark:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="rounded-full bg-current shrink-0"
-                        style={{
-                          width: `${Math.max(3, pw.value * 2)}px`,
-                          height: `${Math.max(3, pw.value * 2)}px`,
-                        }}
-                      />
-                      <span>
-                        {pw.label === "1.5pt"
-                          ? "Thin (1.5pt)"
-                          : pw.label === "2.5pt"
-                          ? "Medium (2.5pt)"
-                          : "Thick (4.0pt)"}
-                      </span>
-                    </div>
-                    {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              togglePenDropdown();
+            }}
+            className={`p-1.5 pr-2.5 rounded-r-full cursor-pointer flex items-center justify-center transition-colors min-w-[26px] min-h-[30px] ${
+              tool === "pen"
+                ? "hover:bg-black/15 text-white"
+                : "hover:bg-black/10 dark:hover:bg-white/10"
+            }`}
+            title="Pen width options"
+            aria-label="Pen width options"
+            aria-expanded={isPenOpen}
+          >
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${isPenOpen ? "rotate-180" : ""}`} />
+          </button>
         </div>
 
         {/* Tool: Highlighter */}
@@ -561,8 +613,15 @@ export function AnnotationToolbar({
           <span className="hidden md:inline">Underline</span>
         </button>
 
-        {/* Tool: Shapes Dropdown Popover */}
-        <div className="relative shrink-0 flex items-center" ref={dropdownRef}>
+        {/* Tool: Shapes with Dropdown */}
+        <div
+          ref={dropdownRef}
+          className={`relative shrink-0 flex items-center rounded-full transition-colors ${
+            isShapeActive
+              ? "bg-[#A85D44] text-white shadow-xs"
+              : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
+          }`}
+        >
           <button
             type="button"
             onClick={() => {
@@ -573,58 +632,29 @@ export function AnnotationToolbar({
                 onSelectTool(activeShapeType);
               }
             }}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer shrink-0 ${
-              isShapeActive
-                ? "bg-[#A85D44] text-white shadow-xs"
-                : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
-            }`}
+            className="flex items-center gap-1 pl-2.5 pr-1 py-1.5 rounded-l-full font-medium cursor-pointer"
             title={isShapeActive ? "Shape active (click to deselect)" : "Geometric Shapes"}
-            aria-expanded={isShapesOpen}
           >
             <ActiveShapeIcon className="w-3.5 h-3.5" />
             <span className="hidden md:inline">Shapes</span>
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!isShapeActive) onSelectTool(activeShapeType);
-                setIsShapesOpen((prev) => !prev);
-              }}
-              className="p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10"
-              title="Select shape type"
-            >
-              <ChevronDown className={`w-3 h-3 transition-transform ${isShapesOpen ? "rotate-180" : ""}`} />
-            </span>
           </button>
-
-          {isShapesOpen && (
-            <div className="absolute top-full mt-2 left-0 z-50 min-w-[160px] p-1.5 rounded-xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-lg flex flex-col gap-0.5 animate-in fade-in-0 zoom-in-95 duration-100">
-              {SHAPE_DEFINITIONS.map((def) => {
-                const IconComponent = def.icon;
-                const isSelected = tool === def.type;
-                return (
-                  <button
-                    key={def.type}
-                    type="button"
-                    onClick={() => {
-                      setActiveShapeType(def.type);
-                      onSelectTool(def.type);
-                      setIsShapesOpen(false);
-                    }}
-                    className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer text-left ${
-                      isSelected
-                        ? "bg-[#A85D44] text-white"
-                        : "text-[#2D2926] dark:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
-                    }`}
-                  >
-                    <IconComponent className="w-4 h-4 shrink-0" />
-                    <span>{def.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleShapesDropdown();
+            }}
+            className={`p-1.5 pr-2.5 rounded-r-full cursor-pointer flex items-center justify-center transition-colors min-w-[26px] min-h-[30px] ${
+              isShapeActive
+                ? "hover:bg-black/15 text-white"
+                : "hover:bg-black/10 dark:hover:bg-white/10"
+            }`}
+            title="Select shape type"
+            aria-label="Select shape type"
+            aria-expanded={isShapesOpen}
+          >
+            <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${isShapesOpen ? "rotate-180" : ""}`} />
+          </button>
         </div>
 
         {/* Tool: Text Box */}
@@ -744,6 +774,104 @@ export function AnnotationToolbar({
       </div>
       <div className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-8 rounded-r-full bg-gradient-to-l from-[#FAF8F5] dark:from-[#21201E] to-transparent opacity-80" />
     </div>
+
+    {/* Portaled Pen Width Popover (escapes overflow-x-auto) */}
+    {mounted && isPenOpen && penCoords && createPortal(
+      <div
+        ref={penMenuRef}
+        style={{
+          position: "fixed",
+          top: `${penCoords.top}px`,
+          left: `${penCoords.left}px`,
+          zIndex: 9999,
+        }}
+        className="min-w-[155px] p-1.5 rounded-xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-2xl flex flex-col gap-0.5 animate-in fade-in-0 zoom-in-95 duration-100"
+      >
+        <div className="px-2 py-1 text-[10px] font-semibold tracking-wider uppercase text-stone-500 dark:text-stone-400">
+          Pen Width
+        </div>
+        {PEN_STROKE_WIDTHS.map((pw) => {
+          const isSelected = (penWidth || 2.5) === pw.value;
+          return (
+            <button
+              key={pw.value}
+              type="button"
+              onClick={() => {
+                onSelectPenWidth?.(pw.value);
+                onSelectTool("pen");
+                setIsPenOpen(false);
+              }}
+              className={`flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer text-left ${
+                isSelected
+                  ? "bg-[#A85D44] text-white"
+                  : "text-[#2D2926] dark:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className="rounded-full bg-current shrink-0"
+                  style={{
+                    width: `${Math.max(3, pw.value * 2)}px`,
+                    height: `${Math.max(3, pw.value * 2)}px`,
+                  }}
+                />
+                <span>
+                  {pw.label === "1.5pt"
+                    ? "Thin (1.5pt)"
+                    : pw.label === "2.5pt"
+                    ? "Medium (2.5pt)"
+                    : "Thick (4.0pt)"}
+                </span>
+              </div>
+              {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+            </button>
+          );
+        })}
+      </div>,
+      document.body
+    )}
+
+    {/* Portaled Shapes Popover (escapes overflow-x-auto) */}
+    {mounted && isShapesOpen && shapesCoords && createPortal(
+      <div
+        ref={shapesMenuRef}
+        style={{
+          position: "fixed",
+          top: `${shapesCoords.top}px`,
+          left: `${shapesCoords.left}px`,
+          zIndex: 9999,
+        }}
+        className="min-w-[175px] p-1.5 rounded-xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-2xl flex flex-col gap-0.5 animate-in fade-in-0 zoom-in-95 duration-100"
+      >
+        <div className="px-2 py-1 text-[10px] font-semibold tracking-wider uppercase text-stone-500 dark:text-stone-400">
+          Shape
+        </div>
+        {SHAPE_DEFINITIONS.map((def) => {
+          const IconComponent = def.icon;
+          const isSelected = tool === def.type;
+          return (
+            <button
+              key={def.type}
+              type="button"
+              onClick={() => {
+                setActiveShapeType(def.type);
+                onSelectTool(def.type);
+                setIsShapesOpen(false);
+              }}
+              className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-xs font-medium transition-colors cursor-pointer text-left ${
+                isSelected
+                  ? "bg-[#A85D44] text-white"
+                  : "text-[#2D2926] dark:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
+              }`}
+            >
+              <IconComponent className="w-4 h-4 shrink-0" />
+              <span>{def.label}</span>
+            </button>
+          );
+        })}
+      </div>,
+      document.body
+    )}
   </aside>
 );
 }

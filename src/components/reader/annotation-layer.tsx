@@ -734,6 +734,125 @@ export function AnnotationLayer({
   const isShape = isShapeTool(tool);
   const isDrawingTool = tool !== null && (tool === "pen" || tool === "highlighter" || tool === "underline" || isShape);
 
+  // Two-finger pan & pinch gesture tracking to scroll/zoom without accidental drawing
+  const isTwoFingerActiveRef = useRef(false);
+  const touchStateRef = useRef<{
+    prevMidX: number;
+    prevMidY: number;
+    prevDist: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        isTwoFingerActiveRef.current = true;
+        setIsDrawing(false);
+        setCurrentStroke(null);
+        setPreviewShape(null);
+
+        // If accidental erasing happened right before second finger touched, restore prior state
+        if (hasErasedDuringGestureRef.current && snapshotBeforeGestureRef.current) {
+          updateStrokes(snapshotBeforeGestureRef.current.strokes);
+          updateShapes(snapshotBeforeGestureRef.current.shapes);
+          updateTextBoxes(snapshotBeforeGestureRef.current.textBoxes);
+          snapshotBeforeGestureRef.current = null;
+          hasErasedDuringGestureRef.current = false;
+        }
+        isErasingRef.current = false;
+        lastEraserPointRef.current = null;
+        setEraserSweepPoint(null);
+
+        try {
+          for (let i = 0; i < e.touches.length; i++) {
+            svgEl.releasePointerCapture(e.touches[i].identifier);
+          }
+        } catch {
+          // Ignore
+        }
+
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const midX = (t1.clientX + t2.clientX) / 2;
+        const midY = (t1.clientY + t2.clientY) / 2;
+        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+
+        touchStateRef.current = {
+          prevMidX: midX,
+          prevMidY: midY,
+          prevDist: dist,
+        };
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const currentMidX = (t1.clientX + t2.clientX) / 2;
+        const currentMidY = (t1.clientY + t2.clientY) / 2;
+        const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+
+        if (touchStateRef.current) {
+          const deltaX = currentMidX - touchStateRef.current.prevMidX;
+          const deltaY = currentMidY - touchStateRef.current.prevMidY;
+
+          // Two-finger scroll: pan window smoothly
+          if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
+            window.scrollBy(-deltaX, -deltaY);
+          }
+
+          // Two-finger pinch: zoom PDF scale
+          if (touchStateRef.current.prevDist > 10 && currentDist > 10) {
+            const distRatio = currentDist / touchStateRef.current.prevDist;
+            if (Math.abs(distRatio - 1) > 0.008) {
+              window.dispatchEvent(
+                new CustomEvent("vilekh-pdf-zoom", {
+                  detail: { scaleFactor: distRatio },
+                })
+              );
+            }
+          }
+        }
+
+        touchStateRef.current = {
+          prevMidX: currentMidX,
+          prevMidY: currentMidY,
+          prevDist: currentDist,
+        };
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        touchStateRef.current = null;
+      }
+      if (e.touches.length === 0) {
+        setTimeout(() => {
+          isTwoFingerActiveRef.current = false;
+        }, 60);
+      }
+    };
+
+    svgEl.addEventListener("touchstart", handleTouchStart, { passive: false });
+    svgEl.addEventListener("touchmove", handleTouchMove, { passive: false });
+    svgEl.addEventListener("touchend", handleTouchEnd, { passive: true });
+    svgEl.addEventListener("touchcancel", handleTouchEnd, { passive: true });
+
+    return () => {
+      svgEl.removeEventListener("touchstart", handleTouchStart);
+      svgEl.removeEventListener("touchmove", handleTouchMove);
+      svgEl.removeEventListener("touchend", handleTouchEnd);
+      svgEl.removeEventListener("touchcancel", handleTouchEnd);
+    };
+  }, [updateStrokes, updateShapes, updateTextBoxes]);
+
   // Global pointerup listener to ensure any drag gesture outside SVG completes safely
   useEffect(() => {
     const handleGlobalPointerUp = () => {
@@ -754,6 +873,9 @@ export function AnnotationLayer({
 
   // 3. SVG Pointer event handlers for drawing, shapes, and drag-to-erase
   const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    // If a two-finger gesture is in progress or was just active, ignore pointerdown
+    if (isTwoFingerActiveRef.current) return;
+
     // Record deep snapshot of annotations before any gesture begins
     snapshotBeforeGestureRef.current = {
       strokes: JSON.parse(JSON.stringify(strokesRef.current)),
@@ -839,6 +961,8 @@ export function AnnotationLayer({
   };
 
   const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (isTwoFingerActiveRef.current) return;
+
     if (isErasingRef.current) {
       const pt = getPoint(e);
       setEraserSweepPoint(pt);
@@ -883,6 +1007,18 @@ export function AnnotationLayer({
   };
 
   const handleSvgPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (isTwoFingerActiveRef.current) {
+      try {
+        (svgRef.current || e.currentTarget).releasePointerCapture(e.pointerId);
+      } catch {
+        // Ignore
+      }
+      setIsDrawing(false);
+      setCurrentStroke(null);
+      setPreviewShape(null);
+      return;
+    }
+
     if (isErasingRef.current) {
       try {
         (svgRef.current || e.currentTarget).releasePointerCapture(e.pointerId);

@@ -275,6 +275,77 @@ export function PdfViewer({
     };
   }, [animateScaleTo]);
 
+  // Handle custom 2-finger pinch zoom events dispatched from AnnotationLayer or child elements
+  useEffect(() => {
+    const handleCustomZoom = (e: Event) => {
+      const customEvent = e as CustomEvent<{ scaleFactor: number }>;
+      const factor = customEvent.detail?.scaleFactor;
+      if (!factor || typeof factor !== "number" || isNaN(factor)) return;
+
+      const clampedFactor = Math.min(1.15, Math.max(0.85, factor));
+      const newTarget = Math.min(2.5, Math.max(0.4, targetScaleRef.current * clampedFactor));
+      animateScaleTo(newTarget);
+    };
+
+    window.addEventListener("vilekh-pdf-zoom", handleCustomZoom);
+    return () => {
+      window.removeEventListener("vilekh-pdf-zoom", handleCustomZoom);
+    };
+  }, [animateScaleTo]);
+
+  // Two-finger pinch-to-zoom directly on the PDF viewer container (for Read Mode)
+  useEffect(() => {
+    const el = viewerRef.current;
+    if (!el) return;
+
+    let prevDist = 0;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        prevDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        if (e.defaultPrevented) return;
+
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+
+        if (prevDist > 10 && dist > 10) {
+          const ratio = dist / prevDist;
+          if (Math.abs(ratio - 1) > 0.008) {
+            if (e.cancelable) e.preventDefault();
+            const clamped = Math.min(1.15, Math.max(0.85, ratio));
+            const newTarget = Math.min(2.5, Math.max(0.4, targetScaleRef.current * clamped));
+            animateScaleTo(newTarget);
+          }
+        }
+        prevDist = dist;
+      }
+    };
+
+    const handleTouchEnd = () => {
+      prevDist = 0;
+    };
+
+    el.addEventListener("touchstart", handleTouchStart, { passive: true });
+    el.addEventListener("touchmove", handleTouchMove, { passive: false });
+    el.addEventListener("touchend", handleTouchEnd, { passive: true });
+    el.addEventListener("touchcancel", handleTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener("touchstart", handleTouchStart);
+      el.removeEventListener("touchmove", handleTouchMove);
+      el.removeEventListener("touchend", handleTouchEnd);
+      el.removeEventListener("touchcancel", handleTouchEnd);
+    };
+  }, [animateScaleTo]);
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-stone-500 gap-3">
