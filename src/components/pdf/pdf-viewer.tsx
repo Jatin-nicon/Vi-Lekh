@@ -36,6 +36,9 @@ export function PdfViewer({
   const viewerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const initialFitAppliedRef = useRef(false);
+  const targetScaleRef = useRef<number>(1.2);
+  const currentScaleRef = useRef<number>(1.2);
+  const animFrameRef = useRef<number | null>(null);
 
   // Load PDF document and all page proxies
   useEffect(() => {
@@ -158,6 +161,8 @@ export function PdfViewer({
           const containerWidth = containerRef.current?.clientWidth || (window.innerWidth - 32);
           const targetWidth = Math.max(280, containerWidth - 16);
           const computedScale = Math.min(1.2, Math.max(0.45, Number((targetWidth / intrinsicWidth).toFixed(2))));
+          targetScaleRef.current = computedScale;
+          currentScaleRef.current = computedScale;
           setScale(computedScale);
         } catch (e) {
           console.warn("Failed to compute fit-to-width scale:", e);
@@ -166,12 +171,51 @@ export function PdfViewer({
     }
   }, [pages]);
 
+  // Smooth lerp animator for 60fps silky zoom glide
+  const animateScaleTo = useCallback((target: number) => {
+    const clampedTarget = Math.min(2.5, Math.max(0.4, Number(target.toFixed(2))));
+    targetScaleRef.current = clampedTarget;
+
+    if (animFrameRef.current !== null) return;
+
+    const step = () => {
+      const current = currentScaleRef.current;
+      const target = targetScaleRef.current;
+      const diff = target - current;
+
+      if (Math.abs(diff) < 0.005) {
+        currentScaleRef.current = target;
+        setScale(target);
+        animFrameRef.current = null;
+        return;
+      }
+
+      // 0.22 easing factor creates a snappy ~120ms organic deceleration
+      const next = current + diff * 0.22;
+      currentScaleRef.current = next;
+      setScale(Number(next.toFixed(3)));
+
+      animFrameRef.current = requestAnimationFrame(step);
+    };
+
+    animFrameRef.current = requestAnimationFrame(step);
+  }, []);
+
+  // Cleanup animation frame on unmount
+  useEffect(() => {
+    return () => {
+      if (animFrameRef.current !== null) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
+    };
+  }, []);
+
   const handleZoomIn = () => {
-    setScale((prev) => Math.min(2.5, Number((prev + 0.15).toFixed(2))));
+    animateScaleTo(targetScaleRef.current + 0.15);
   };
 
   const handleZoomOut = () => {
-    setScale((prev) => Math.max(0.4, Number((prev - 0.15).toFixed(2))));
+    animateScaleTo(targetScaleRef.current - 0.15);
   };
 
   const handleZoomReset = () => {
@@ -180,13 +224,14 @@ export function PdfViewer({
         const intrinsicWidth = pages[0].getViewport({ scale: 1 }).width || 612;
         const containerWidth = containerRef.current?.clientWidth || (window.innerWidth - 32);
         const targetWidth = Math.max(280, containerWidth - 16);
-        setScale(Math.min(1.2, Math.max(0.45, Number((targetWidth / intrinsicWidth).toFixed(2)))));
+        const computed = Math.min(1.2, Math.max(0.45, Number((targetWidth / intrinsicWidth).toFixed(2))));
+        animateScaleTo(computed);
         return;
       } catch {
         // Fall back to default
       }
     }
-    setScale(1.2);
+    animateScaleTo(1.2);
   };
 
   // Handle Ctrl / Cmd + wheel scroll to zoom PDF rather than zooming the entire webpage
@@ -216,12 +261,10 @@ export function PdfViewer({
         }
 
         const clampedDelta = Math.max(-120, Math.min(120, delta));
-        const factor = Math.exp(-clampedDelta * 0.0015);
+        const factor = Math.exp(-clampedDelta * 0.0016);
 
-        setScale((prev) => {
-          const next = Number((prev * factor).toFixed(2));
-          return Math.min(2.5, Math.max(0.4, next));
-        });
+        const newTarget = Math.min(2.5, Math.max(0.4, targetScaleRef.current * factor));
+        animateScaleTo(newTarget);
       }
     };
 
@@ -230,7 +273,7 @@ export function PdfViewer({
     return () => {
       window.removeEventListener("wheel", handleWheel);
     };
-  }, []);
+  }, [animateScaleTo]);
 
   if (loading) {
     return (

@@ -34,6 +34,31 @@ export function PdfPageView({
   const textLayerRef = useRef<HTMLDivElement>(null);
   const [isRendered, setIsRendered] = useState(false);
 
+  // Debounce high-DPI canvas re-rasterization during active zoom gestures so the existing canvas scales via GPU without blank flickering
+  const [rasterScale, setRasterScale] = useState<number>(scale);
+  const rasterTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!isRendered) {
+      setRasterScale(scale);
+      return;
+    }
+
+    if (rasterTimeoutRef.current) {
+      clearTimeout(rasterTimeoutRef.current);
+    }
+
+    rasterTimeoutRef.current = setTimeout(() => {
+      setRasterScale(scale);
+    }, 140);
+
+    return () => {
+      if (rasterTimeoutRef.current) {
+        clearTimeout(rasterTimeoutRef.current);
+      }
+    };
+  }, [scale, isRendered]);
+
   const defaultViewport = page.getViewport({ scale: 1 });
   const viewport = page.getViewport({ scale });
   const renderedWidth = Math.floor(viewport.width);
@@ -93,13 +118,13 @@ export function PdfPageView({
         }
 
         const outputScale = window.devicePixelRatio || 1;
-        const currentViewport = page.getViewport({ scale });
+        const currentViewport = page.getViewport({ scale: rasterScale });
 
         // High-DPI canvas configuration
         canvas.width = Math.floor(currentViewport.width * outputScale);
         canvas.height = Math.floor(currentViewport.height * outputScale);
-        canvas.style.width = `${Math.floor(currentViewport.width)}px`;
-        canvas.style.height = `${Math.floor(currentViewport.height)}px`;
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
 
         const ctx = canvas.getContext("2d");
         if (!ctx || isCancelled) return;
@@ -125,8 +150,8 @@ export function PdfPageView({
 
         // Render selectable DOM text layer
         textLayerDiv.innerHTML = "";
-        textLayerDiv.style.width = `${Math.floor(currentViewport.width)}px`;
-        textLayerDiv.style.height = `${Math.floor(currentViewport.height)}px`;
+        textLayerDiv.style.width = "100%";
+        textLayerDiv.style.height = "100%";
         textLayerDiv.style.setProperty("--scale-factor", `${currentViewport.scale}`);
 
         if (
@@ -185,7 +210,7 @@ export function PdfPageView({
         }
       }
     };
-  }, [page, scale, pageNumber]);
+  }, [page, rasterScale, pageNumber]);
 
   return (
     <div
@@ -199,16 +224,12 @@ export function PdfPageView({
       }}
     >
       {/* High-DPI Canvas Rendering of PDF graphics & text */}
-      <canvas ref={canvasRef} className="absolute inset-0 block select-none pointer-events-none z-0" />
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block select-none pointer-events-none z-0" />
 
       {/* Transparent DOM text layer for native text selection & copying */}
       <div
         ref={textLayerRef}
-        className="textLayer absolute inset-0 select-text z-10"
-        style={{
-          width: `${renderedWidth}px`,
-          height: `${renderedHeight}px`,
-        }}
+        className="textLayer absolute inset-0 w-full h-full select-text z-10"
       />
 
       {/* Slot for per-page interactive AnnotationLayer */}
