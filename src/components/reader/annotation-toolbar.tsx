@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import {
+  MousePointer2,
   Pen,
   Highlighter,
   Underline as UnderlineIcon,
@@ -78,8 +79,8 @@ export const SHAPE_FILL_OPACITIES = [
 export const TEXT_FONT_SIZES = [12, 14, 18, 24];
 
 export interface AnnotationToolbarProps {
-  tool: AnnotationTool;
-  onSelectTool: (tool: AnnotationTool) => void;
+  tool: AnnotationTool | null;
+  onSelectTool: (tool: AnnotationTool | null) => void;
   selectedColor: string;
   onSelectColor: (color: string) => void;
   strokeCount: number;
@@ -431,27 +432,57 @@ export function AnnotationToolbar({
     >
       <div className="relative">
         <div className="flex items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-full bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-[0_4px_20px_rgba(45,41,38,0.12)] text-xs text-[#2D2926] dark:text-[#E3DFD7] overflow-x-auto no-scrollbar flex-nowrap">
+        {/* Tool: Read / Cursor Mode (Neutral - Scroll & Pinch-Zoom without drawing) */}
+        <button
+          type="button"
+          onClick={() => onSelectTool(null)}
+          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer shrink-0 ${
+            tool === null
+              ? "bg-[#2D2926] dark:bg-[#FAF8F5] text-white dark:text-[#21201E] shadow-xs"
+              : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
+          }`}
+          title="Read Mode (Scroll & Pinch-Zoom without drawing)"
+          aria-label="Read and scroll mode"
+        >
+          <MousePointer2 className="w-3.5 h-3.5" />
+          <span className="hidden md:inline">Read</span>
+        </button>
+
         {/* Tool: Pen Dropdown Popover */}
-        <div className="relative shrink-0" ref={penDropdownRef}>
+        <div className="relative shrink-0 flex items-center" ref={penDropdownRef}>
           <button
             type="button"
             onClick={() => {
-              if (tool !== "pen") {
+              if (tool === "pen") {
+                onSelectTool(null);
+                setIsPenOpen(false);
+              } else {
                 onSelectTool("pen");
               }
-              setIsPenOpen((prev) => !prev);
             }}
             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer ${
               tool === "pen"
                 ? "bg-[#A85D44] text-white shadow-xs"
                 : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
             }`}
-            title="Freehand Pen (Click to select thickness)"
+            title={tool === "pen" ? "Pen active (click to deselect)" : "Freehand Pen"}
             aria-expanded={isPenOpen}
           >
             <Pen className="w-3.5 h-3.5" />
             <span className="hidden md:inline">Pen</span>
-            <ChevronDown className={`w-3 h-3 transition-transform ${isPenOpen ? "rotate-180" : ""}`} />
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (tool !== "pen") onSelectTool("pen");
+                setIsPenOpen((prev) => !prev);
+              }}
+              className="p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10"
+              title="Select pen width"
+            >
+              <ChevronDown className={`w-3 h-3 transition-transform ${isPenOpen ? "rotate-180" : ""}`} />
+            </span>
           </button>
 
           {isPenOpen && (
@@ -503,13 +534,13 @@ export function AnnotationToolbar({
         {/* Tool: Highlighter */}
         <button
           type="button"
-          onClick={() => onSelectTool("highlighter")}
+          onClick={() => onSelectTool(tool === "highlighter" ? null : "highlighter")}
           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer shrink-0 ${
             tool === "highlighter"
               ? "bg-[#D97706] text-white shadow-xs"
               : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
           }`}
-          title="Text Highlighter"
+          title={tool === "highlighter" ? "Highlighter active (click to deselect)" : "Text Highlighter"}
         >
           <Highlighter className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Highlight</span>
@@ -518,39 +549,53 @@ export function AnnotationToolbar({
         {/* Tool: Underline */}
         <button
           type="button"
-          onClick={() => onSelectTool("underline")}
+          onClick={() => onSelectTool(tool === "underline" ? null : "underline")}
           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer shrink-0 ${
             tool === "underline"
               ? "bg-[#2563EB] text-white shadow-xs"
               : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
           }`}
-          title="Underline Tool"
+          title={tool === "underline" ? "Underline active (click to deselect)" : "Underline Tool"}
         >
           <UnderlineIcon className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Underline</span>
         </button>
 
         {/* Tool: Shapes Dropdown Popover */}
-        <div className="relative shrink-0" ref={dropdownRef}>
+        <div className="relative shrink-0 flex items-center" ref={dropdownRef}>
           <button
             type="button"
             onClick={() => {
-              if (!isShapeActive) {
+              if (isShapeActive) {
+                onSelectTool(null);
+                setIsShapesOpen(false);
+              } else {
                 onSelectTool(activeShapeType);
               }
-              setIsShapesOpen((prev) => !prev);
             }}
             className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer shrink-0 ${
               isShapeActive
                 ? "bg-[#A85D44] text-white shadow-xs"
                 : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
             }`}
-            title="Geometric Shapes (Rectangle, Circle, Arrow, Line, Star, Cloud)"
+            title={isShapeActive ? "Shape active (click to deselect)" : "Geometric Shapes"}
             aria-expanded={isShapesOpen}
           >
             <ActiveShapeIcon className="w-3.5 h-3.5" />
             <span className="hidden md:inline">Shapes</span>
-            <ChevronDown className={`w-3 h-3 transition-transform ${isShapesOpen ? "rotate-180" : ""}`} />
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!isShapeActive) onSelectTool(activeShapeType);
+                setIsShapesOpen((prev) => !prev);
+              }}
+              className="p-0.5 rounded hover:bg-black/10 dark:hover:bg-white/10"
+              title="Select shape type"
+            >
+              <ChevronDown className={`w-3 h-3 transition-transform ${isShapesOpen ? "rotate-180" : ""}`} />
+            </span>
           </button>
 
           {isShapesOpen && (
@@ -585,13 +630,13 @@ export function AnnotationToolbar({
         {/* Tool: Text Box */}
         <button
           type="button"
-          onClick={() => onSelectTool("text")}
+          onClick={() => onSelectTool(tool === "text" ? null : "text")}
           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer shrink-0 ${
             tool === "text"
               ? "bg-[#A85D44] text-white shadow-xs"
               : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
           }`}
-          title="Type Text Box (Click anywhere on note to type)"
+          title={tool === "text" ? "Text active (click to deselect)" : "Type Text Box"}
         >
           <Type className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Text</span>
@@ -600,13 +645,13 @@ export function AnnotationToolbar({
         {/* Tool: Eraser */}
         <button
           type="button"
-          onClick={() => onSelectTool("eraser")}
+          onClick={() => onSelectTool(tool === "eraser" ? null : "eraser")}
           className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer shrink-0 ${
             tool === "eraser"
               ? "bg-[#5D7063] text-white shadow-xs"
               : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
           }`}
-          title="Eraser (Click any stroke or text box to erase)"
+          title={tool === "eraser" ? "Eraser active (click to deselect)" : "Eraser"}
         >
           <Eraser className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Eraser</span>
@@ -622,7 +667,12 @@ export function AnnotationToolbar({
               <button
                 key={c.value}
                 type="button"
-                onClick={() => onSelectColor(c.value)}
+                onClick={() => {
+                  onSelectColor(c.value);
+                  if (tool === null) {
+                    onSelectTool("pen");
+                  }
+                }}
                 title={c.label}
                 aria-label={`Select ${c.label} color`}
                 className={`w-4 h-4 rounded-full transition-transform cursor-pointer shrink-0 ${

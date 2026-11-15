@@ -53,7 +53,7 @@ export interface AnnotationLayerProps {
   intrinsicHeight?: number;
   renderedWidth?: number;
   renderedHeight?: number;
-  tool: AnnotationTool;
+  tool: AnnotationTool | null;
   color: string;
   penWidth?: number;
   shapeWidth?: number;
@@ -76,7 +76,8 @@ export interface AnnotationLayerProps {
   className?: string;
 }
 
-export function isShapeTool(tool: AnnotationTool): tool is ShapeType {
+export function isShapeTool(tool: AnnotationTool | null): tool is ShapeType {
+  if (!tool) return false;
   return (
     tool === "rectangle" ||
     tool === "circle" ||
@@ -340,7 +341,8 @@ export function isTextBoxIntersectingPoint(
   return dx * dx + dy * dy <= radius * radius;
 }
 
-export function getAnnotationCursor(tool: AnnotationTool, color: string): string {
+export function getAnnotationCursor(tool: AnnotationTool | null, color: string): string {
+  if (!tool) return "default";
   const encodedColor = (color || "#A85D44").replace("#", "%23");
 
   if (tool === "pen") {
@@ -730,7 +732,7 @@ export function AnnotationLayer({
   };
 
   const isShape = isShapeTool(tool);
-  const isDrawingTool = tool === "pen" || tool === "highlighter" || tool === "underline" || isShape;
+  const isDrawingTool = tool !== null && (tool === "pen" || tool === "highlighter" || tool === "underline" || isShape);
 
   // Global pointerup listener to ensure any drag gesture outside SVG completes safely
   useEffect(() => {
@@ -1251,7 +1253,7 @@ export function AnnotationLayer({
     }
   };
 
-  const isInteractive = true;
+  const isInteractive = tool !== null;
   const activeShape = shapes.find((s) => s.id === activeShapeId) || null;
   const annotationCursor = getAnnotationCursor(tool, color);
 
@@ -1455,7 +1457,7 @@ interface WordDocsTextBoxItemProps {
   box: AnnotationTextBox;
   scale: number;
   pageWidth?: number;
-  tool: AnnotationTool;
+  tool: AnnotationTool | null;
   isSelected: boolean;
   onSelect: () => void;
   onDeselect: () => void;
@@ -1569,7 +1571,7 @@ function WordDocsTextBoxItem({
   };
 
   const isEraser = tool === "eraser";
-  const isDrawingTool = tool === "pen" || tool === "highlighter" || tool === "underline";
+  const isDrawingTool = tool !== null && (tool === "pen" || tool === "highlighter" || tool === "underline");
   const boxWidth = box.width || 220;
 
   // Render coordinates scaled to current screen view
@@ -1598,8 +1600,10 @@ function WordDocsTextBoxItem({
         width: `${screenWidth}px`,
       }}
       className={`annotation-text-box select-none transition-shadow ${
-        isDrawingTool || isEraser
-          ? "pointer-events-none z-10"
+        isDrawingTool || isEraser || tool === null
+          ? isSelected
+            ? "pointer-events-auto z-30"
+            : "pointer-events-none z-10"
           : isSelected
           ? "pointer-events-auto z-30"
           : "pointer-events-auto z-10 cursor-pointer"
