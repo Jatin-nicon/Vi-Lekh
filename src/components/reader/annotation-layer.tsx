@@ -68,6 +68,11 @@ export interface AnnotationLayerProps {
   onSelectShape?: (shapeId: string | null) => void;
   activeTextId?: string | null;
   onSelectText?: (textId: string | null) => void;
+  onRecordSnapshot?: (snapshot: {
+    strokes: AnnotationStroke[];
+    shapes: AnnotationShape[];
+    textBoxes: AnnotationTextBox[];
+  }) => void;
   className?: string;
 }
 
@@ -149,6 +154,192 @@ export function pointsToSvgPath(points: AnnotationPoint[]): string {
   return d;
 }
 
+export const ERASER_RADIUS = 14;
+
+/**
+ * Calculates squared Euclidean distance from point (px, py) to line segment (ax, ay)-(bx, by).
+ */
+export function pointToSegmentDistanceSquared(
+  px: number,
+  py: number,
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number
+): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  if (l2 === 0) {
+    const ex = px - ax;
+    const ey = py - ay;
+    return ex * ex + ey * ey;
+  }
+  let t = ((px - ax) * dx + (py - ay) * dy) / l2;
+  t = Math.max(0, Math.min(1, t));
+  const qx = ax + t * dx;
+  const qy = ay + t * dy;
+  const ex = px - qx;
+  const ey = py - qy;
+  return ex * ex + ey * ey;
+}
+
+/**
+ * Determines whether an annotation stroke intersects with an eraser circle at (px, py) with radius r.
+ * Uses AABB bounding box pre-filtering followed by segment distance testing.
+ */
+export function isStrokeIntersectingPoint(
+  stroke: AnnotationStroke,
+  px: number,
+  py: number,
+  radius: number = ERASER_RADIUS
+): boolean {
+  if (!stroke.points || stroke.points.length === 0) return false;
+
+  const effectiveRadius = radius + (stroke.width || 2) / 2;
+  const effRadSq = effectiveRadius * effectiveRadius;
+
+  // AABB pre-filtering
+  let minX = stroke.points[0].x;
+  let maxX = stroke.points[0].x;
+  let minY = stroke.points[0].y;
+  let maxY = stroke.points[0].y;
+
+  for (let i = 1; i < stroke.points.length; i++) {
+    const pt = stroke.points[i];
+    if (pt.x < minX) minX = pt.x;
+    if (pt.x > maxX) maxX = pt.x;
+    if (pt.y < minY) minY = pt.y;
+    if (pt.y > maxY) maxY = pt.y;
+  }
+
+  if (
+    px + effectiveRadius < minX ||
+    px - effectiveRadius > maxX ||
+    py + effectiveRadius < minY ||
+    py - effectiveRadius > maxY
+  ) {
+    return false;
+  }
+
+  // Single point stroke test
+  if (stroke.points.length === 1) {
+    const dx = px - stroke.points[0].x;
+    const dy = py - stroke.points[0].y;
+    return dx * dx + dy * dy <= effRadSq;
+  }
+
+  // Segment tests
+  for (let i = 0; i < stroke.points.length - 1; i++) {
+    const p1 = stroke.points[i];
+    const p2 = stroke.points[i + 1];
+    if (pointToSegmentDistanceSquared(px, py, p1.x, p1.y, p2.x, p2.y) <= effRadSq) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Determines whether a geometric shape intersects with an eraser circle at (px, py) with radius r.
+ */
+export function isShapeIntersectingPoint(
+  shape: AnnotationShape,
+  px: number,
+  py: number,
+  radius: number = ERASER_RADIUS
+): boolean {
+  const minX = Math.min(shape.startX, shape.endX);
+  const maxX = Math.max(shape.startX, shape.endX);
+  const minY = Math.min(shape.startY, shape.endY);
+  const maxY = Math.max(shape.startY, shape.endY);
+  const width = Math.max(1, maxX - minX);
+  const height = Math.max(1, maxY - minY);
+  const strokeWidth = shape.width || 2;
+  const effRad = radius + strokeWidth / 2;
+  const effRadSq = effRad * effRad;
+
+  // AABB pre-filtering
+  if (
+    px + effRad < minX ||
+    px - effRad > maxX ||
+    py + effRad < minY ||
+    py - effRad > maxY
+  ) {
+    return false;
+  }
+
+  if (shape.type === "line") {
+    return pointToSegmentDistanceSquared(px, py, shape.startX, shape.startY, shape.endX, shape.endY) <= effRadSq;
+  }
+
+  if (shape.type === "arrow") {
+    // Check main shaft
+    if (pointToSegmentDistanceSquared(px, py, shape.startX, shape.startY, shape.endX, shape.endY) <= effRadSq) {
+      return true;
+    }
+    // Also check arrowhead endpoint buffer
+    const headDistanceSq = (px - shape.endX) * (px - shape.endX) + (py - shape.endY) * (py - shape.endY);
+    return headDistanceSq <= (effRad + 14) * (effRad + 14);
+  }
+
+  if (shape.type === "circle") {
+    // Ellipse hit test with radius margin
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const rx = width / 2 + effRad;
+    const ry = height / 2 + effRad;
+    const normalizedDist =
+      Math.pow(px - cx, 2) / Math.pow(rx, 2) + Math.pow(py - cy, 2) / Math.pow(ry, 2);
+    return normalizedDist <= 1.0;
+  }
+
+  // Rectangle, star, cloud: test distance from (px, py) to the shape bounding rectangle
+  const closestX = Math.max(minX, Math.min(maxX, px));
+  const closestY = Math.max(minY, Math.min(maxY, py));
+  const dx = px - closestX;
+  const dy = py - closestY;
+  return dx * dx + dy * dy <= effRadSq;
+}
+
+/**
+ * Determines whether an annotation text box intersects with an eraser circle at (px, py) with radius r.
+ */
+export function isTextBoxIntersectingPoint(
+  box: AnnotationTextBox,
+  px: number,
+  py: number,
+  radius: number = ERASER_RADIUS
+): boolean {
+  const boxWidth = box.width || 220;
+  const fontSize = box.fontSize || 14;
+  const lineCount = (box.text || "").split("\n").length;
+  const boxHeight = box.height || Math.max(36, lineCount * (fontSize * 1.4) + 20);
+
+  const minX = box.x;
+  const maxX = box.x + boxWidth;
+  const minY = box.y;
+  const maxY = box.y + boxHeight;
+
+  // AABB test
+  if (
+    px + radius < minX ||
+    px - radius > maxX ||
+    py + radius < minY ||
+    py - radius > maxY
+  ) {
+    return false;
+  }
+
+  // Distance from point to box rectangle
+  const closestX = Math.max(minX, Math.min(maxX, px));
+  const closestY = Math.max(minY, Math.min(maxY, py));
+  const dx = px - closestX;
+  const dy = py - closestY;
+  return dx * dx + dy * dy <= radius * radius;
+}
+
 export function getAnnotationCursor(tool: AnnotationTool, color: string): string {
   const encodedColor = (color || "#A85D44").replace("#", "%23");
 
@@ -208,6 +399,7 @@ export function AnnotationLayer({
   onSelectShape,
   activeTextId: propActiveTextId,
   onSelectText,
+  onRecordSnapshot,
   className = "",
 }: AnnotationLayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -281,6 +473,37 @@ export function AnnotationLayer({
     setShapesRef.current = setShapes;
   });
 
+  // Keep latest annotation objects in refs to avoid stale closures during high-frequency drag sweeps
+  const strokesRef = useRef(strokes);
+  const shapesRef = useRef(shapes);
+  const textBoxesRef = useRef(textBoxes);
+  strokesRef.current = strokes;
+  shapesRef.current = shapes;
+  textBoxesRef.current = textBoxes;
+  useEffect(() => {
+    strokesRef.current = strokes;
+    shapesRef.current = shapes;
+    textBoxesRef.current = textBoxes;
+  });
+
+  // Active eraser sweep point for visual reticle
+  const [eraserSweepPoint, setEraserSweepPoint] = useState<AnnotationPoint | null>(null);
+  const isErasingRef = useRef(false);
+  const hasErasedDuringGestureRef = useRef(false);
+  const lastEraserPointRef = useRef<AnnotationPoint | null>(null);
+
+  const onRecordSnapshotRef = useRef(onRecordSnapshot);
+  useEffect(() => {
+    onRecordSnapshotRef.current = onRecordSnapshot;
+  });
+
+  // Snapshot taken before drawing or erasing gesture starts
+  const snapshotBeforeGestureRef = useRef<{
+    strokes: AnnotationStroke[];
+    shapes: AnnotationShape[];
+    textBoxes: AnnotationTextBox[];
+  } | null>(null);
+
   // Track initial load per note and page so localStorage read runs exactly once
   const initializedKeyRef = useRef<string>("");
 
@@ -293,7 +516,9 @@ export function AnnotationLayer({
     initializedKeyRef.current = currentKey;
 
     try {
-      const savedStrokes = localStorage.getItem(strokesStorageKey);
+      const savedStrokes =
+        localStorage.getItem(strokesStorageKey) ||
+        (pageNumber === 1 ? localStorage.getItem(`vilekh_annotations_${noteId}`) : null);
       if (savedStrokes) {
         const parsed = JSON.parse(savedStrokes);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -305,7 +530,9 @@ export function AnnotationLayer({
     }
 
     try {
-      const savedTextBoxes = localStorage.getItem(textStorageKey);
+      const savedTextBoxes =
+        localStorage.getItem(textStorageKey) ||
+        (pageNumber === 1 ? localStorage.getItem(`vilekh_textboxes_${noteId}`) : null);
       if (savedTextBoxes) {
         const parsed = JSON.parse(savedTextBoxes);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -321,7 +548,9 @@ export function AnnotationLayer({
     }
 
     try {
-      const savedShapes = localStorage.getItem(shapesStorageKey);
+      const savedShapes =
+        localStorage.getItem(shapesStorageKey) ||
+        (pageNumber === 1 ? localStorage.getItem(`vilekh_shapes_${noteId}`) : null);
       if (savedShapes) {
         const parsed = JSON.parse(savedShapes);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -336,6 +565,7 @@ export function AnnotationLayer({
   // Save strokes to localStorage
   const updateStrokes = useCallback(
     (newStrokes: AnnotationStroke[]) => {
+      strokesRef.current = newStrokes;
       onChangeStrokesRef.current(newStrokes);
       try {
         localStorage.setItem(strokesStorageKey, JSON.stringify(newStrokes));
@@ -349,6 +579,7 @@ export function AnnotationLayer({
   // Save text boxes to localStorage
   const updateTextBoxes = useCallback(
     (newBoxes: AnnotationTextBox[]) => {
+      textBoxesRef.current = newBoxes;
       setTextBoxesRef.current(newBoxes);
       try {
         localStorage.setItem(textStorageKey, JSON.stringify(newBoxes));
@@ -362,6 +593,7 @@ export function AnnotationLayer({
   // Save shapes to localStorage
   const updateShapes = useCallback(
     (newShapes: AnnotationShape[]) => {
+      shapesRef.current = newShapes;
       setShapesRef.current(newShapes);
       try {
         localStorage.setItem(shapesStorageKey, JSON.stringify(newShapes));
@@ -383,6 +615,73 @@ export function AnnotationLayer({
     }
   }, [tool, textBoxes, updateTextBoxes]);
 
+  // Reset active eraser drag state when switching tools
+  useEffect(() => {
+    if (tool !== "eraser") {
+      isErasingRef.current = false;
+      lastEraserPointRef.current = null;
+      setEraserSweepPoint(null);
+    }
+  }, [tool]);
+
+  // Continuous eraser sweep: checks intersection against strokes, shapes, and text boxes
+  const performEraseAt = useCallback(
+    (pt: AnnotationPoint) => {
+      // 1. Strokes
+      const currentStrokes = strokesRef.current;
+      const filteredStrokes = currentStrokes.filter(
+        (s) => !isStrokeIntersectingPoint(s, pt.x, pt.y, ERASER_RADIUS)
+      );
+      if (filteredStrokes.length !== currentStrokes.length) {
+        hasErasedDuringGestureRef.current = true;
+        strokesRef.current = filteredStrokes;
+        updateStrokes(filteredStrokes);
+      }
+
+      // 2. Shapes
+      const currentShapes = shapesRef.current;
+      const filteredShapes = currentShapes.filter(
+        (s) => !isShapeIntersectingPoint(s, pt.x, pt.y, ERASER_RADIUS)
+      );
+      if (filteredShapes.length !== currentShapes.length) {
+        hasErasedDuringGestureRef.current = true;
+        shapesRef.current = filteredShapes;
+        updateShapes(filteredShapes);
+        if (activeShapeId && !filteredShapes.some((s) => s.id === activeShapeId)) {
+          setActiveShapeId(null);
+        }
+      }
+
+      // 3. Text Boxes
+      const currentBoxes = textBoxesRef.current;
+      const filteredBoxes = currentBoxes.filter(
+        (b) => !isTextBoxIntersectingPoint(b, pt.x, pt.y, ERASER_RADIUS)
+      );
+      if (filteredBoxes.length !== currentBoxes.length) {
+        hasErasedDuringGestureRef.current = true;
+        textBoxesRef.current = filteredBoxes;
+        updateTextBoxes(filteredBoxes);
+        if (activeTextId && !filteredBoxes.some((b) => b.id === activeTextId)) {
+          setActiveTextId(null);
+        }
+      }
+    },
+    [activeShapeId, activeTextId, setActiveShapeId, setActiveTextId, updateShapes, updateStrokes, updateTextBoxes]
+  );
+
+  const sweepEraseBetween = useCallback(
+    (startPt: AnnotationPoint, endPt: AnnotationPoint) => {
+      const dist = Math.hypot(endPt.x - startPt.x, endPt.y - startPt.y);
+      const steps = Math.max(1, Math.ceil(dist / 8));
+      for (let i = 1; i <= steps; i++) {
+        const sampleX = startPt.x + (endPt.x - startPt.x) * (i / steps);
+        const sampleY = startPt.y + (endPt.y - startPt.y) * (i / steps);
+        performEraseAt({ x: sampleX, y: sampleY });
+      }
+    },
+    [performEraseAt]
+  );
+
   // 2. Keyboard shortcuts for Undo and active text box deletion
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -402,28 +701,19 @@ export function AnnotationLayer({
       // Delete active text box if Delete or Backspace is pressed while not typing inside textarea
       if ((e.key === "Delete" || e.key === "Backspace") && activeTextId && !isTyping) {
         e.preventDefault();
+        onRecordSnapshotRef.current?.({
+          strokes: [...strokesRef.current],
+          shapes: [...shapesRef.current],
+          textBoxes: [...textBoxesRef.current],
+        });
         updateTextBoxes(textBoxes.filter((b) => b.id !== activeTextId));
         setActiveTextId(null);
         return;
       }
-
-      // Undo strokes/shapes/boxes with Ctrl+Z / Cmd+Z
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey && !isTyping) {
-        if (strokes.length > 0) {
-          e.preventDefault();
-          updateStrokes(strokes.slice(0, -1));
-        } else if (shapes.length > 0) {
-          e.preventDefault();
-          updateShapes(shapes.slice(0, -1));
-        } else if (textBoxes.length > 0) {
-          e.preventDefault();
-          updateTextBoxes(textBoxes.slice(0, -1));
-        }
-      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [strokes, shapes, textBoxes, activeTextId, updateStrokes, updateShapes, updateTextBoxes]);
+  }, [textBoxes, activeTextId, updateTextBoxes]);
 
   // Helper to extract point in intrinsic PDF points (72 DPI coordinates)
   const getPoint = (e: React.PointerEvent<SVGSVGElement>): AnnotationPoint => {
@@ -442,12 +732,52 @@ export function AnnotationLayer({
   const isShape = isShapeTool(tool);
   const isDrawingTool = tool === "pen" || tool === "highlighter" || tool === "underline" || isShape;
 
-  // 3. SVG Pointer event handlers for drawing & shapes
+  // Global pointerup listener to ensure any drag gesture outside SVG completes safely
+  useEffect(() => {
+    const handleGlobalPointerUp = () => {
+      if (isErasingRef.current) {
+        isErasingRef.current = false;
+        lastEraserPointRef.current = null;
+        setEraserSweepPoint(null);
+        if (hasErasedDuringGestureRef.current && snapshotBeforeGestureRef.current) {
+          onRecordSnapshotRef.current?.(snapshotBeforeGestureRef.current);
+        }
+        snapshotBeforeGestureRef.current = null;
+        hasErasedDuringGestureRef.current = false;
+      }
+    };
+    window.addEventListener("pointerup", handleGlobalPointerUp);
+    return () => window.removeEventListener("pointerup", handleGlobalPointerUp);
+  }, []);
+
+  // 3. SVG Pointer event handlers for drawing, shapes, and drag-to-erase
   const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    // Record deep snapshot of annotations before any gesture begins
+    snapshotBeforeGestureRef.current = {
+      strokes: JSON.parse(JSON.stringify(strokesRef.current)),
+      shapes: JSON.parse(JSON.stringify(shapesRef.current)),
+      textBoxes: JSON.parse(JSON.stringify(textBoxesRef.current)),
+    };
+    hasErasedDuringGestureRef.current = false;
+
+    if (tool === "eraser") {
+      try {
+        (svgRef.current || e.currentTarget).setPointerCapture(e.pointerId);
+      } catch {
+        // Ignore
+      }
+      isErasingRef.current = true;
+      const pt = getPoint(e);
+      lastEraserPointRef.current = pt;
+      setEraserSweepPoint(pt);
+      performEraseAt(pt);
+      return;
+    }
+
     if (!isDrawingTool) return;
 
     try {
-      (e.target as Element).setPointerCapture(e.pointerId);
+      (svgRef.current || e.currentTarget).setPointerCapture(e.pointerId);
     } catch {
       // Ignore
     }
@@ -507,6 +837,18 @@ export function AnnotationLayer({
   };
 
   const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (isErasingRef.current) {
+      const pt = getPoint(e);
+      setEraserSweepPoint(pt);
+      if (lastEraserPointRef.current) {
+        sweepEraseBetween(lastEraserPointRef.current, pt);
+      } else {
+        performEraseAt(pt);
+      }
+      lastEraserPointRef.current = pt;
+      return;
+    }
+
     if (!isDrawing) return;
 
     const pt = getPoint(e);
@@ -539,10 +881,29 @@ export function AnnotationLayer({
   };
 
   const handleSvgPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (isErasingRef.current) {
+      try {
+        (svgRef.current || e.currentTarget).releasePointerCapture(e.pointerId);
+      } catch {
+        // Ignore
+      }
+      isErasingRef.current = false;
+      lastEraserPointRef.current = null;
+      setEraserSweepPoint(null);
+
+      // Record snapshot if any annotations were erased during this gesture
+      if (hasErasedDuringGestureRef.current && snapshotBeforeGestureRef.current) {
+        onRecordSnapshotRef.current?.(snapshotBeforeGestureRef.current);
+      }
+      snapshotBeforeGestureRef.current = null;
+      hasErasedDuringGestureRef.current = false;
+      return;
+    }
+
     if (!isDrawing) return;
 
     try {
-      (e.target as Element).releasePointerCapture(e.pointerId);
+      (svgRef.current || e.currentTarget).releasePointerCapture(e.pointerId);
     } catch {
       // Ignore
     }
@@ -555,6 +916,10 @@ export function AnnotationLayer({
         previewShape.endY - previewShape.startY
       );
       if (dist >= 3) {
+        if (snapshotBeforeGestureRef.current) {
+          onRecordSnapshotRef.current?.(snapshotBeforeGestureRef.current);
+          snapshotBeforeGestureRef.current = null;
+        }
         const newShape: AnnotationShape = {
           id: `shape_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           type: previewShape.type,
@@ -566,7 +931,7 @@ export function AnnotationLayer({
           width: previewShape.width || shapeWidth,
           fillOpacity: previewShape.fillOpacity ?? shapeFillOpacity,
         };
-        updateShapes([...shapes, newShape]);
+        updateShapes([...shapesRef.current, newShape]);
         setActiveShapeId(newShape.id);
       }
       setPreviewShape(null);
@@ -574,7 +939,11 @@ export function AnnotationLayer({
     }
 
     if (currentStroke && currentStroke.points.length > 0) {
-      updateStrokes([...strokes, currentStroke]);
+      if (snapshotBeforeGestureRef.current) {
+        onRecordSnapshotRef.current?.(snapshotBeforeGestureRef.current);
+        snapshotBeforeGestureRef.current = null;
+      }
+      updateStrokes([...strokesRef.current, currentStroke]);
     }
     setCurrentStroke(null);
   };
@@ -582,20 +951,30 @@ export function AnnotationLayer({
   // Erase individual stroke
   const handleDeleteStroke = (strokeId: string) => {
     if (tool === "eraser") {
-      updateStrokes(strokes.filter((s) => s.id !== strokeId));
+      onRecordSnapshotRef.current?.({
+        strokes: [...strokesRef.current],
+        shapes: [...shapesRef.current],
+        textBoxes: [...textBoxesRef.current],
+      });
+      updateStrokes(strokesRef.current.filter((s) => s.id !== strokeId));
     }
   };
 
   // Erase individual shape
   const handleDeleteShape = (shapeId: string) => {
-    updateShapes(shapes.filter((s) => s.id !== shapeId));
+    onRecordSnapshotRef.current?.({
+      strokes: [...strokesRef.current],
+      shapes: [...shapesRef.current],
+      textBoxes: [...textBoxesRef.current],
+    });
+    updateShapes(shapesRef.current.filter((s) => s.id !== shapeId));
     if (activeShapeId === shapeId) {
       setActiveShapeId(null);
     }
   };
 
   const handleUpdateShape = (shapeId: string, updates: Partial<AnnotationShape>) => {
-    const updated = shapes.map((s) => (s.id === shapeId ? { ...s, ...updates } : s));
+    const updated = shapesRef.current.map((s) => (s.id === shapeId ? { ...s, ...updates } : s));
     updateShapes(updated);
   };
 
@@ -630,7 +1009,7 @@ export function AnnotationLayer({
       shape.fillOpacity && shape.fillOpacity > 0 ? shape.fillOpacity : undefined;
     const strokeWidthVal = shape.width || 2;
     const strokeColorVal = shape.color;
-    const pointerEventsVal = isPreview ? "none" : "all";
+    const pointerEventsVal = isPreview || isEraser ? "none" : "all";
 
     switch (shape.type) {
       case "rectangle": {
@@ -826,9 +1205,15 @@ export function AnnotationLayer({
     const boundedX = Math.max(0, Math.min(effectiveIntrinsicWidth - defaultWidth, Math.round(rawX)));
     const boundedY = Math.max(0, Math.round(rawY));
 
-    const cleanedBoxes = textBoxes.filter((b) =>
+    const cleanedBoxes = textBoxesRef.current.filter((b) =>
       b.id === activeTextId ? b.text.trim().length > 0 : true
     );
+
+    onRecordSnapshotRef.current?.({
+      strokes: [...strokesRef.current],
+      shapes: [...shapesRef.current],
+      textBoxes: [...textBoxesRef.current],
+    });
 
     const newId = `tb_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
     const newBox: AnnotationTextBox = {
@@ -849,12 +1234,17 @@ export function AnnotationLayer({
   };
 
   const handleUpdateTextBox = (id: string, updates: Partial<AnnotationTextBox>) => {
-    const updated = textBoxes.map((b) => (b.id === id ? { ...b, ...updates } : b));
+    const updated = textBoxesRef.current.map((b) => (b.id === id ? { ...b, ...updates } : b));
     updateTextBoxes(updated);
   };
 
   const handleDeleteTextBox = (id: string) => {
-    const updated = textBoxes.filter((b) => b.id !== id);
+    onRecordSnapshotRef.current?.({
+      strokes: [...strokesRef.current],
+      shapes: [...shapesRef.current],
+      textBoxes: [...textBoxesRef.current],
+    });
+    const updated = textBoxesRef.current.filter((b) => b.id !== id);
     updateTextBoxes(updated);
     if (activeTextId === id) {
       setActiveTextId(null);
@@ -891,7 +1281,7 @@ export function AnnotationLayer({
             : "pointer-events-none"
         }`}
         style={{
-          touchAction: isDrawingTool ? "none" : "auto",
+          touchAction: isDrawingTool || tool === "eraser" ? "none" : "auto",
           cursor: isDrawingTool || tool === "eraser" ? annotationCursor : "default",
         }}
       >
@@ -926,7 +1316,7 @@ export function AnnotationLayer({
                     ? "cursor-pointer hover:stroke-red-500 hover:opacity-100"
                     : ""
                 }
-                pointerEvents={tool === "eraser" ? "stroke" : "none"}
+                pointerEvents="none"
               />
             );
           }
@@ -949,7 +1339,7 @@ export function AnnotationLayer({
                   ? "cursor-pointer hover:stroke-red-500 hover:opacity-100"
                   : ""
               }
-              pointerEvents={tool === "eraser" ? "stroke" : "none"}
+              pointerEvents="none"
             />
           );
         })}
@@ -987,6 +1377,38 @@ export function AnnotationLayer({
               pointerEvents="none"
             />
           ))}
+
+        {/* Active Eraser Sweep Reticle */}
+        {eraserSweepPoint && (
+          <g pointerEvents="none">
+            {/* Outer high-contrast white ring for dark/colored slides */}
+            <circle
+              cx={eraserSweepPoint.x}
+              cy={eraserSweepPoint.y}
+              r={ERASER_RADIUS}
+              fill="rgba(239, 68, 68, 0.18)"
+              stroke="rgba(255, 255, 255, 0.9)"
+              strokeWidth={3}
+            />
+            {/* Inner dashed red ring */}
+            <circle
+              cx={eraserSweepPoint.x}
+              cy={eraserSweepPoint.y}
+              r={ERASER_RADIUS}
+              fill="none"
+              stroke="#ef4444"
+              strokeWidth={1.5}
+              strokeDasharray="3 3"
+            />
+            {/* Center dot */}
+            <circle
+              cx={eraserSweepPoint.x}
+              cy={eraserSweepPoint.y}
+              r={1.5}
+              fill="#ef4444"
+            />
+          </g>
+        )}
       </svg>
 
       {/* Positioned Word/Docs-Style HTML Text Boxes and Shape Selection Frame */}
@@ -1176,10 +1598,8 @@ function WordDocsTextBoxItem({
         width: `${screenWidth}px`,
       }}
       className={`annotation-text-box select-none transition-shadow ${
-        isDrawingTool
+        isDrawingTool || isEraser
           ? "pointer-events-none z-10"
-          : isEraser
-          ? "pointer-events-auto z-20 cursor-pointer"
           : isSelected
           ? "pointer-events-auto z-30"
           : "pointer-events-auto z-10 cursor-pointer"
@@ -1308,7 +1728,7 @@ function WordDocsTextBoxItem({
         {isEraser && (
           <div className="print:hidden flex items-center gap-1 pb-1 mb-1 text-[11px] font-semibold text-red-600">
             <Trash2 className="w-3.5 h-3.5" />
-            <span>Click to delete</span>
+            <span>Click or drag to delete</span>
           </div>
         )}
 

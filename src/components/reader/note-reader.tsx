@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState, useCallback, useRef } from "react";
+import React, { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import type { Note, Revision, Profile } from "@/lib/supabase/types";
 import { blocksToHtml } from "@/lib/editor/block-converter";
 import { renderMathInHtml } from "@/lib/editor/math-html";
@@ -91,47 +91,211 @@ export function NoteReader({
     return strokeCount + shapeCount + boxCount;
   }, [pageStrokes, pageShapes, pageTextBoxes]);
 
-  // Undo last stroke, shape, or text box on the active page
-  const handleUndo = useCallback(() => {
-    const currentPageStrokes = pageStrokes[activePage] || [];
-    const currentPageShapes = pageShapes[activePage] || [];
-    const currentPageTextBoxes = pageTextBoxes[activePage] || [];
+  // Document-level Undo and Redo snapshot stacks
+  const undoStackRef = useRef<{
+    pageNumber: number;
+    strokes: AnnotationStroke[];
+    shapes: AnnotationShape[];
+    textBoxes: AnnotationTextBox[];
+  }[]>([]);
+  const redoStackRef = useRef<{
+    pageNumber: number;
+    strokes: AnnotationStroke[];
+    shapes: AnnotationShape[];
+    textBoxes: AnnotationTextBox[];
+  }[]>([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
-    if (currentPageStrokes.length > 0) {
-      const updated = currentPageStrokes.slice(0, -1);
-      setPageStrokes((prev) => ({ ...prev, [activePage]: updated }));
-      try {
-        localStorage.setItem(
-          `vilekh_pdf_annotations_${note.id}_page_${activePage}`,
-          JSON.stringify(updated)
-        );
-      } catch {
-        // Ignore
+  // Latest page state refs to prevent stale closure captures during rapid history actions
+  const pageStrokesRef = useRef(pageStrokes);
+  const pageShapesRef = useRef(pageShapes);
+  const pageTextBoxesRef = useRef(pageTextBoxes);
+  pageStrokesRef.current = pageStrokes;
+  pageShapesRef.current = pageShapes;
+  pageTextBoxesRef.current = pageTextBoxes;
+
+  const updateHistoryState = useCallback(() => {
+    setCanUndo(undoStackRef.current.length > 0);
+    setCanRedo(redoStackRef.current.length > 0);
+  }, []);
+
+  // Records a pre-action state snapshot onto the undo stack
+  const handleRecordSnapshot = useCallback(
+    (
+      pageNum: number,
+      beforeState: {
+        strokes: AnnotationStroke[];
+        shapes: AnnotationShape[];
+        textBoxes: AnnotationTextBox[];
       }
-    } else if (currentPageShapes.length > 0) {
-      const updated = currentPageShapes.slice(0, -1);
-      setPageShapes((prev) => ({ ...prev, [activePage]: updated }));
-      try {
-        localStorage.setItem(
-          `vilekh_pdf_shapes_${note.id}_page_${activePage}`,
-          JSON.stringify(updated)
-        );
-      } catch {
-        // Ignore
+    ) => {
+      undoStackRef.current.push({
+        pageNumber: pageNum,
+        strokes: JSON.parse(JSON.stringify(beforeState.strokes)),
+        shapes: JSON.parse(JSON.stringify(beforeState.shapes)),
+        textBoxes: JSON.parse(JSON.stringify(beforeState.textBoxes)),
+      });
+      // Cap at 50 history entries
+      if (undoStackRef.current.length > 50) {
+        undoStackRef.current.shift();
       }
-    } else if (currentPageTextBoxes.length > 0) {
-      const updated = currentPageTextBoxes.slice(0, -1);
-      setPageTextBoxes((prev) => ({ ...prev, [activePage]: updated }));
-      try {
+      // Clear redo stack on new action
+      redoStackRef.current = [];
+      updateHistoryState();
+    },
+    [updateHistoryState]
+  );
+
+  // Undo last action (stroke, shape, erasure, or text box) restoring prior state
+  const handleUndo = useCallback(() => {
+    if (undoStackRef.current.length === 0) return;
+
+    const targetSnapshot = undoStackRef.current.pop()!;
+    const pageNum = targetSnapshot.pageNumber;
+
+    // Capture current live state of the page before undo and push to redo stack
+    const currentStrokes = pageStrokesRef.current[pageNum] || [];
+    const currentShapes = pageShapesRef.current[pageNum] || [];
+    const currentTextBoxes = pageTextBoxesRef.current[pageNum] || [];
+
+    redoStackRef.current.push({
+      pageNumber: pageNum,
+      strokes: JSON.parse(JSON.stringify(currentStrokes)),
+      shapes: JSON.parse(JSON.stringify(currentShapes)),
+      textBoxes: JSON.parse(JSON.stringify(currentTextBoxes)),
+    });
+
+    // Restore target snapshot state
+    setPageStrokes((prev) => ({ ...prev, [pageNum]: targetSnapshot.strokes }));
+    setPageShapes((prev) => ({ ...prev, [pageNum]: targetSnapshot.shapes }));
+    setPageTextBoxes((prev) => ({ ...prev, [pageNum]: targetSnapshot.textBoxes }));
+
+    // Persist restored state to localStorage
+    try {
+      localStorage.setItem(
+        `vilekh_pdf_annotations_${note.id}_page_${pageNum}`,
+        JSON.stringify(targetSnapshot.strokes)
+      );
+      localStorage.setItem(
+        `vilekh_pdf_shapes_${note.id}_page_${pageNum}`,
+        JSON.stringify(targetSnapshot.shapes)
+      );
+      localStorage.setItem(
+        `vilekh_pdf_textboxes_${note.id}_page_${pageNum}`,
+        JSON.stringify(targetSnapshot.textBoxes)
+      );
+      if (pageNum === 1) {
         localStorage.setItem(
-          `vilekh_pdf_textboxes_${note.id}_page_${activePage}`,
-          JSON.stringify(updated)
+          `vilekh_annotations_${note.id}`,
+          JSON.stringify(targetSnapshot.strokes)
         );
-      } catch {
-        // Ignore
+        localStorage.setItem(
+          `vilekh_shapes_${note.id}`,
+          JSON.stringify(targetSnapshot.shapes)
+        );
+        localStorage.setItem(
+          `vilekh_textboxes_${note.id}`,
+          JSON.stringify(targetSnapshot.textBoxes)
+        );
       }
+    } catch {
+      // Ignore
     }
-  }, [activePage, note.id, pageStrokes, pageShapes, pageTextBoxes]);
+
+    if (activePage !== pageNum) {
+      setActivePage(pageNum);
+    }
+
+    updateHistoryState();
+  }, [activePage, note.id, updateHistoryState]);
+
+  // Redo previously undone action
+  const handleRedo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return;
+
+    const targetSnapshot = redoStackRef.current.pop()!;
+    const pageNum = targetSnapshot.pageNumber;
+
+    // Capture current live state of the page before redo and push to undo stack
+    const currentStrokes = pageStrokesRef.current[pageNum] || [];
+    const currentShapes = pageShapesRef.current[pageNum] || [];
+    const currentTextBoxes = pageTextBoxesRef.current[pageNum] || [];
+
+    undoStackRef.current.push({
+      pageNumber: pageNum,
+      strokes: JSON.parse(JSON.stringify(currentStrokes)),
+      shapes: JSON.parse(JSON.stringify(currentShapes)),
+      textBoxes: JSON.parse(JSON.stringify(currentTextBoxes)),
+    });
+
+    // Restore target snapshot state
+    setPageStrokes((prev) => ({ ...prev, [pageNum]: targetSnapshot.strokes }));
+    setPageShapes((prev) => ({ ...prev, [pageNum]: targetSnapshot.shapes }));
+    setPageTextBoxes((prev) => ({ ...prev, [pageNum]: targetSnapshot.textBoxes }));
+
+    // Persist restored state to localStorage
+    try {
+      localStorage.setItem(
+        `vilekh_pdf_annotations_${note.id}_page_${pageNum}`,
+        JSON.stringify(targetSnapshot.strokes)
+      );
+      localStorage.setItem(
+        `vilekh_pdf_shapes_${note.id}_page_${pageNum}`,
+        JSON.stringify(targetSnapshot.shapes)
+      );
+      localStorage.setItem(
+        `vilekh_pdf_textboxes_${note.id}_page_${pageNum}`,
+        JSON.stringify(targetSnapshot.textBoxes)
+      );
+      if (pageNum === 1) {
+        localStorage.setItem(
+          `vilekh_annotations_${note.id}`,
+          JSON.stringify(targetSnapshot.strokes)
+        );
+        localStorage.setItem(
+          `vilekh_shapes_${note.id}`,
+          JSON.stringify(targetSnapshot.shapes)
+        );
+        localStorage.setItem(
+          `vilekh_textboxes_${note.id}`,
+          JSON.stringify(targetSnapshot.textBoxes)
+        );
+      }
+    } catch {
+      // Ignore
+    }
+
+    if (activePage !== pageNum) {
+      setActivePage(pageNum);
+    }
+
+    updateHistoryState();
+  }, [activePage, note.id, updateHistoryState]);
+
+  // Global keyboard shortcuts for Undo (Ctrl+Z) and Redo (Ctrl+Y / Ctrl+Shift+Z)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isTyping = target?.tagName === "TEXTAREA" || target?.tagName === "INPUT";
+      if (isTyping) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleUndo, handleRedo]);
 
   // Clear annotations on current page or all pages
   const handleClear = useCallback(() => {
@@ -144,6 +308,13 @@ export function NoteReader({
     setActiveTextId(null);
     setActiveShapeId(null);
 
+    // Record snapshot of current activePage before clearing so it can be undone
+    handleRecordSnapshot(activePage, {
+      strokes: pageStrokesRef.current[activePage] || [],
+      shapes: pageShapesRef.current[activePage] || [],
+      textBoxes: pageTextBoxesRef.current[activePage] || [],
+    });
+
     if (clearAll) {
       setPageStrokes({});
       setPageShapes({});
@@ -154,6 +325,9 @@ export function NoteReader({
           localStorage.removeItem(`vilekh_pdf_shapes_${note.id}_page_${i}`);
           localStorage.removeItem(`vilekh_pdf_textboxes_${note.id}_page_${i}`);
         }
+        localStorage.removeItem(`vilekh_annotations_${note.id}`);
+        localStorage.removeItem(`vilekh_shapes_${note.id}`);
+        localStorage.removeItem(`vilekh_textboxes_${note.id}`);
       } catch {
         // Ignore
       }
@@ -165,11 +339,16 @@ export function NoteReader({
         localStorage.removeItem(`vilekh_pdf_annotations_${note.id}_page_${activePage}`);
         localStorage.removeItem(`vilekh_pdf_shapes_${note.id}_page_${activePage}`);
         localStorage.removeItem(`vilekh_pdf_textboxes_${note.id}_page_${activePage}`);
+        if (activePage === 1) {
+          localStorage.removeItem(`vilekh_annotations_${note.id}`);
+          localStorage.removeItem(`vilekh_shapes_${note.id}`);
+          localStorage.removeItem(`vilekh_textboxes_${note.id}`);
+        }
       } catch {
         // Ignore
       }
     }
-  }, [totalAnnotationCount, activePage, note.id]);
+  }, [totalAnnotationCount, activePage, handleRecordSnapshot, note.id]);
 
   // Find currently active text box across pages
   const activeTextBox = useMemo(() => {
@@ -229,6 +408,11 @@ export function NoteReader({
         const pNum = Number(pageStr);
         const list = next[pNum];
         if (list?.some((b) => b.id === activeTextId)) {
+          handleRecordSnapshot(pNum, {
+            strokes: pageStrokes[pNum] || [],
+            shapes: pageShapes[pNum] || [],
+            textBoxes: list,
+          });
           const updatedList = list.filter((b) => b.id !== activeTextId);
           next[pNum] = updatedList;
           try {
@@ -245,7 +429,7 @@ export function NoteReader({
       return next;
     });
     setActiveTextId(null);
-  }, [activeTextId, note.id]);
+  }, [activeTextId, handleRecordSnapshot, note.id, pageShapes, pageStrokes]);
 
   const handleUpdateActiveShape = useCallback(
     (updates: Partial<AnnotationShape>) => {
@@ -285,6 +469,11 @@ export function NoteReader({
         const pNum = Number(pageStr);
         const list = next[pNum];
         if (list?.some((s) => s.id === activeShapeId)) {
+          handleRecordSnapshot(pNum, {
+            strokes: pageStrokes[pNum] || [],
+            shapes: list,
+            textBoxes: pageTextBoxes[pNum] || [],
+          });
           const updatedList = list.filter((s) => s.id !== activeShapeId);
           next[pNum] = updatedList;
           try {
@@ -301,7 +490,7 @@ export function NoteReader({
       return next;
     });
     setActiveShapeId(null);
-  }, [activeShapeId, note.id]);
+  }, [activeShapeId, handleRecordSnapshot, note.id, pageStrokes, pageTextBoxes]);
 
   // One-click Client-Side PDF vector export via pdf-lib
   const handleExportPdf = useCallback(async () => {
@@ -382,6 +571,7 @@ export function NoteReader({
           setActiveTextId(id);
           if (id) setActiveShapeId(null);
         }}
+        onRecordSnapshot={(snapshot) => handleRecordSnapshot(pageNum, snapshot)}
       />
     ),
     [
@@ -399,6 +589,7 @@ export function NoteReader({
       handlePageStrokesChange,
       handlePageShapesChange,
       handlePageTextBoxesChange,
+      handleRecordSnapshot,
     ]
   );
 
@@ -426,6 +617,9 @@ export function NoteReader({
           onSelectColor={setColor}
           strokeCount={totalAnnotationCount}
           onUndo={handleUndo}
+          canUndo={canUndo}
+          onRedo={handleRedo}
+          canRedo={canRedo}
           onClear={handleClear}
           onExportPdf={handleExportPdf}
           isExporting={isExporting}
@@ -501,6 +695,8 @@ export function NoteReader({
             <HtmlSandboxedViewer html={renderedContent} />
             <AnnotationLayer
               noteId={note.id}
+              pageNumber={1}
+              scale={1.0}
               tool={tool}
               color={color}
               penWidth={penWidth}
@@ -522,6 +718,7 @@ export function NoteReader({
                 setActiveTextId(id);
                 if (id) setActiveShapeId(null);
               }}
+              onRecordSnapshot={(snapshot) => handleRecordSnapshot(1, snapshot)}
             />
           </div>
         ) : (

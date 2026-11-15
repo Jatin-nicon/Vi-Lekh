@@ -8,6 +8,7 @@ import {
   Type,
   Eraser,
   Undo2,
+  Redo2,
   Trash2,
   FileDown,
   Square,
@@ -83,6 +84,9 @@ export interface AnnotationToolbarProps {
   onSelectColor: (color: string) => void;
   strokeCount: number;
   onUndo: () => void;
+  canUndo?: boolean;
+  onRedo?: () => void;
+  canRedo?: boolean;
   onClear: () => void;
   onExportPdf: () => void;
   isExporting?: boolean;
@@ -118,6 +122,9 @@ export function AnnotationToolbar({
   onSelectColor,
   strokeCount,
   onUndo,
+  canUndo,
+  onRedo,
+  canRedo,
   onClear,
   onExportPdf,
   isExporting = false,
@@ -622,17 +629,31 @@ export function AnnotationToolbar({
 
         <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
 
-        {/* Undo Stroke */}
+        {/* Undo Annotation */}
         <button
           type="button"
           onClick={onUndo}
-          disabled={strokeCount === 0}
+          disabled={canUndo !== undefined ? !canUndo : strokeCount === 0}
           className="p-1.5 rounded-full text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           title="Undo (Ctrl+Z)"
           aria-label="Undo last annotation"
         >
           <Undo2 className="w-3.5 h-3.5" />
         </button>
+
+        {/* Redo Annotation */}
+        {onRedo && (
+          <button
+            type="button"
+            onClick={onRedo}
+            disabled={!canRedo}
+            className="p-1.5 rounded-full text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title="Redo (Ctrl+Y or Ctrl+Shift+Z)"
+            aria-label="Redo last annotation"
+          >
+            <Redo2 className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         {/* Clear All Strokes */}
         <button
