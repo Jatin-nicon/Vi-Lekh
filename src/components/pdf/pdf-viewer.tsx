@@ -33,7 +33,9 @@ export function PdfViewer({
   const [internalActivePage, setInternalActivePage] = useState<number>(1);
   const activePage = externalActivePage !== undefined ? externalActivePage : internalActivePage;
 
+  const viewerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const initialFitAppliedRef = useRef(false);
 
   // Load PDF document and all page proxies
   useEffect(() => {
@@ -144,17 +146,81 @@ export function PdfViewer({
     }
   }, []);
 
+  // Auto-fit PDF width on mobile viewports on initial page load
+  useEffect(() => {
+    if (pages.length > 0 && !initialFitAppliedRef.current) {
+      initialFitAppliedRef.current = true;
+      if (typeof window !== "undefined" && window.innerWidth < 768) {
+        try {
+          const firstPage = pages[0];
+          const unscaledViewport = firstPage.getViewport({ scale: 1 });
+          const intrinsicWidth = unscaledViewport.width || 612;
+          const containerWidth = containerRef.current?.clientWidth || (window.innerWidth - 32);
+          const targetWidth = Math.max(280, containerWidth - 16);
+          const computedScale = Math.min(1.2, Math.max(0.45, Number((targetWidth / intrinsicWidth).toFixed(2))));
+          setScale(computedScale);
+        } catch (e) {
+          console.warn("Failed to compute fit-to-width scale:", e);
+        }
+      }
+    }
+  }, [pages]);
+
   const handleZoomIn = () => {
     setScale((prev) => Math.min(2.5, Number((prev + 0.15).toFixed(2))));
   };
 
   const handleZoomOut = () => {
-    setScale((prev) => Math.max(0.6, Number((prev - 0.15).toFixed(2))));
+    setScale((prev) => Math.max(0.4, Number((prev - 0.15).toFixed(2))));
   };
 
   const handleZoomReset = () => {
+    if (typeof window !== "undefined" && window.innerWidth < 768 && pages.length > 0) {
+      try {
+        const intrinsicWidth = pages[0].getViewport({ scale: 1 }).width || 612;
+        const containerWidth = containerRef.current?.clientWidth || (window.innerWidth - 32);
+        const targetWidth = Math.max(280, containerWidth - 16);
+        setScale(Math.min(1.2, Math.max(0.45, Number((targetWidth / intrinsicWidth).toFixed(2)))));
+        return;
+      } catch {
+        // Fall back to default
+      }
+    }
     setScale(1.2);
   };
+
+  // Handle Ctrl / Cmd + wheel scroll to zoom PDF rather than zooming the entire webpage
+  useEffect(() => {
+    const el = viewerRef.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+
+        let delta = e.deltaY;
+        if (e.deltaMode === 1) {
+          delta *= 24; // Convert lines to pixels
+        } else if (e.deltaMode === 2) {
+          delta *= 400; // Convert pages to pixels
+        }
+
+        const clampedDelta = Math.max(-120, Math.min(120, delta));
+        const factor = Math.exp(-clampedDelta * 0.0015);
+
+        setScale((prev) => {
+          const next = Number((prev * factor).toFixed(2));
+          return Math.min(2.5, Math.max(0.4, next));
+        });
+      }
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => {
+      el.removeEventListener("wheel", handleWheel);
+    };
+  }, []);
 
   if (loading) {
     return (
@@ -176,9 +242,9 @@ export function PdfViewer({
   }
 
   return (
-    <div className={`relative w-full ${className}`}>
+    <div ref={viewerRef} className={`relative w-full ${className}`}>
       {/* Zoom and Page Navigation Bar */}
-      <div className="print:hidden sticky top-36 z-30 flex items-center justify-between gap-3 px-3 py-1.5 mb-4 max-w-fit mx-auto rounded-full bg-[#FAF8F5]/90 dark:bg-[#21201E]/90 backdrop-blur-md border border-[#E8E3D9] dark:border-[#33312E] shadow-xs text-xs text-[#2D2926] dark:text-[#E3DFD7]">
+      <div className="print:hidden sticky top-32 z-30 flex items-center justify-between gap-3 px-3 py-1.5 mb-4 max-w-fit mx-auto rounded-full bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-sm text-xs text-[#2D2926] dark:text-[#E3DFD7]">
         {/* Page Switcher */}
         <div className="flex items-center gap-1">
           <button
@@ -213,7 +279,7 @@ export function PdfViewer({
           <button
             type="button"
             onClick={handleZoomOut}
-            disabled={scale <= 0.6}
+            disabled={scale <= 0.4}
             className="p-1 rounded-full hover:bg-stone-200/60 dark:hover:bg-stone-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             title="Zoom Out (-15%)"
             aria-label="Zoom Out"

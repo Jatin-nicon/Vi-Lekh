@@ -184,27 +184,28 @@ export function AnnotationToolbar({
     return (
       <aside
         aria-label="Text formatting controls"
-        className={`print:hidden sticky top-20 z-40 max-w-fit mx-auto transition-all ${className}`}
+        className={`print:hidden sticky top-16 z-20 max-w-[calc(100vw-1.5rem)] sm:max-w-fit mx-auto pt-2 transition-all ${className}`}
       >
-        <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 p-1.5 rounded-full bg-[#FAF8F5]/90 dark:bg-[#21201E]/90 backdrop-blur-md border border-[#E8E3D9] dark:border-[#33312E] shadow-[0_4px_20px_rgba(45,41,38,0.08)] text-xs text-[#2D2926] dark:text-[#E3DFD7]">
+        <div className="relative">
+          <div className="flex items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-full bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-[0_4px_20px_rgba(45,41,38,0.12)] text-xs text-[#2D2926] dark:text-[#E3DFD7] overflow-x-auto no-scrollbar flex-nowrap">
           {/* Done editing text */}
           <button
             type="button"
             onClick={onDeselectTextBox}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-stone-200 dark:bg-stone-800 hover:bg-stone-300 dark:hover:bg-stone-700 text-[#2D2926] dark:text-[#E3DFD7] font-medium transition-colors cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-stone-200 dark:bg-stone-800 hover:bg-stone-300 dark:hover:bg-stone-700 text-[#2D2926] dark:text-[#E3DFD7] font-medium transition-colors cursor-pointer shrink-0"
             title="Done editing text"
           >
             <Check className="w-3.5 h-3.5 text-emerald-600" />
             <span>Done</span>
           </button>
 
-          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
+          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1 shrink-0" />
 
           {/* Bold toggle */}
           <button
             type="button"
             onClick={() => onUpdateActiveTextBox?.({ bold: !activeTextBox.bold })}
-            className={`p-1.5 rounded-full font-bold transition-colors cursor-pointer ${
+            className={`p-1.5 rounded-full font-bold transition-colors cursor-pointer shrink-0 ${
               activeTextBox.bold
                 ? "bg-[#A85D44] text-white shadow-xs"
                 : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
@@ -218,7 +219,7 @@ export function AnnotationToolbar({
           <button
             type="button"
             onClick={() => onUpdateActiveTextBox?.({ italic: !activeTextBox.italic })}
-            className={`p-1.5 rounded-full italic transition-colors cursor-pointer ${
+            className={`p-1.5 rounded-full italic transition-colors cursor-pointer shrink-0 ${
               activeTextBox.italic
                 ? "bg-[#A85D44] text-white shadow-xs"
                 : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
@@ -232,7 +233,7 @@ export function AnnotationToolbar({
           <button
             type="button"
             onClick={() => onUpdateActiveTextBox?.({ hasBorder: !activeTextBox.hasBorder })}
-            className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+            className={`p-1.5 rounded-full transition-colors cursor-pointer shrink-0 ${
               activeTextBox.hasBorder
                 ? "bg-[#A85D44] text-white shadow-xs"
                 : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
@@ -242,10 +243,10 @@ export function AnnotationToolbar({
             <Square className="w-3.5 h-3.5" />
           </button>
 
-          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
+          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1 shrink-0" />
 
           {/* Font size selector */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             <span className="text-[10px] text-[#757069] dark:text-[#948F86] font-medium hidden sm:inline">Size:</span>
             {TEXT_FONT_SIZES.map((sz) => {
               const isSelected = (activeTextBox.fontSize || 14) === sz;
@@ -267,10 +268,10 @@ export function AnnotationToolbar({
             })}
           </div>
 
-          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
+          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1 shrink-0" />
 
           {/* Color palette */}
-          <div className="flex items-center gap-1 px-1">
+          <div className="flex items-center gap-1 px-1 shrink-0">
             {COLOR_PALETTE.map((c) => {
               const isSelected = activeTextBox.color === c.value;
               return (
@@ -292,45 +293,48 @@ export function AnnotationToolbar({
             })}
           </div>
 
-          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
+          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1 shrink-0" />
 
           {/* Delete text box */}
           <button
             type="button"
             onClick={onDeleteActiveTextBox}
-            className="p-1.5 rounded-full text-[#757069] dark:text-[#948F86] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
+            className="p-1.5 rounded-full text-[#757069] dark:text-[#948F86] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer shrink-0"
             title="Delete text box"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
-      </aside>
-    );
-  }
+        <div className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-8 rounded-r-full bg-gradient-to-l from-[#FAF8F5] dark:from-[#21201E] to-transparent opacity-80" />
+      </div>
+    </aside>
+  );
+}
 
   // Mode 2: Contextual Shape Styling Mode
   if (activeShape) {
     return (
       <aside
         aria-label="Shape styling controls"
-        className={`print:hidden sticky top-20 z-40 max-w-fit mx-auto transition-all ${className}`}
+        className={`print:hidden sticky top-16 z-20 max-w-[calc(100vw-1.5rem)] sm:max-w-fit mx-auto pt-2 transition-all ${className}`}
       >
-        <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 p-1.5 rounded-full bg-[#FAF8F5]/90 dark:bg-[#21201E]/90 backdrop-blur-md border border-[#E8E3D9] dark:border-[#33312E] shadow-[0_4px_20px_rgba(45,41,38,0.08)] text-xs text-[#2D2926] dark:text-[#E3DFD7]">
+        <div className="relative">
+          <div className="flex items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-full bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-[0_4px_20px_rgba(45,41,38,0.12)] text-xs text-[#2D2926] dark:text-[#E3DFD7] overflow-x-auto no-scrollbar flex-nowrap">
           {/* Done with shape */}
           <button
             type="button"
             onClick={onDeselectShape}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-stone-200 dark:bg-stone-800 hover:bg-stone-300 dark:hover:bg-stone-700 text-[#2D2926] dark:text-[#E3DFD7] font-medium transition-colors cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-stone-200 dark:bg-stone-800 hover:bg-stone-300 dark:hover:bg-stone-700 text-[#2D2926] dark:text-[#E3DFD7] font-medium transition-colors cursor-pointer shrink-0"
             title="Done editing shape"
           >
             <Check className="w-3.5 h-3.5 text-emerald-600" />
             <span>Done</span>
           </button>
 
-          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
+          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1 shrink-0" />
 
           {/* Stroke Width pills */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             <span className="text-[10px] text-[#757069] dark:text-[#948F86] font-medium hidden sm:inline">Stroke:</span>
             {SHAPE_STROKE_WIDTHS.map((sw) => {
               const isSelected = (activeShape.width || 2) === sw.value;
@@ -351,10 +355,10 @@ export function AnnotationToolbar({
             })}
           </div>
 
-          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
+          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1 shrink-0" />
 
           {/* Fill Opacity pills */}
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             <span className="text-[10px] text-[#757069] dark:text-[#948F86] font-medium hidden sm:inline">Fill:</span>
             {SHAPE_FILL_OPACITIES.map((fo) => {
               const isSelected = (activeShape.fillOpacity ?? 0) === fo.value;
@@ -376,10 +380,10 @@ export function AnnotationToolbar({
             })}
           </div>
 
-          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
+          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1 shrink-0" />
 
           {/* Color palette */}
-          <div className="flex items-center gap-1 px-1">
+          <div className="flex items-center gap-1 px-1 shrink-0">
             {COLOR_PALETTE.map((c) => {
               const isSelected = activeShape.color === c.value;
               return (
@@ -401,31 +405,34 @@ export function AnnotationToolbar({
             })}
           </div>
 
-          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
+          <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1 shrink-0" />
 
           {/* Delete shape */}
           <button
             type="button"
             onClick={onDeleteActiveShape}
-            className="p-1.5 rounded-full text-[#757069] dark:text-[#948F86] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer"
+            className="p-1.5 rounded-full text-[#757069] dark:text-[#948F86] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors cursor-pointer shrink-0"
             title="Delete shape"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
-      </aside>
-    );
-  }
+        <div className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-8 rounded-r-full bg-gradient-to-l from-[#FAF8F5] dark:from-[#21201E] to-transparent opacity-80" />
+      </div>
+    </aside>
+  );
+}
 
   // Mode 3: Default Drawing Mode
   return (
     <aside
       aria-label="Annotation controls"
-      className={`print:hidden sticky top-20 z-40 max-w-fit mx-auto transition-all ${className}`}
+      className={`print:hidden sticky top-16 z-20 max-w-[calc(100vw-1.5rem)] sm:max-w-fit mx-auto pt-2 transition-all ${className}`}
     >
-      <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 p-1.5 rounded-full bg-[#FAF8F5]/90 dark:bg-[#21201E]/90 backdrop-blur-md border border-[#E8E3D9] dark:border-[#33312E] shadow-[0_4px_20px_rgba(45,41,38,0.08)] text-xs text-[#2D2926] dark:text-[#E3DFD7]">
+      <div className="relative">
+        <div className="flex items-center gap-1 sm:gap-1.5 p-1 sm:p-1.5 rounded-full bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-[0_4px_20px_rgba(45,41,38,0.12)] text-xs text-[#2D2926] dark:text-[#E3DFD7] overflow-x-auto no-scrollbar flex-nowrap">
         {/* Tool: Pen Dropdown Popover */}
-        <div className="relative" ref={penDropdownRef}>
+        <div className="relative shrink-0" ref={penDropdownRef}>
           <button
             type="button"
             onClick={() => {
@@ -497,7 +504,7 @@ export function AnnotationToolbar({
         <button
           type="button"
           onClick={() => onSelectTool("highlighter")}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer ${
+          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer shrink-0 ${
             tool === "highlighter"
               ? "bg-[#D97706] text-white shadow-xs"
               : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
@@ -512,7 +519,7 @@ export function AnnotationToolbar({
         <button
           type="button"
           onClick={() => onSelectTool("underline")}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer ${
+          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer shrink-0 ${
             tool === "underline"
               ? "bg-[#2563EB] text-white shadow-xs"
               : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
@@ -524,7 +531,7 @@ export function AnnotationToolbar({
         </button>
 
         {/* Tool: Shapes Dropdown Popover */}
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative shrink-0" ref={dropdownRef}>
           <button
             type="button"
             onClick={() => {
@@ -533,7 +540,7 @@ export function AnnotationToolbar({
               }
               setIsShapesOpen((prev) => !prev);
             }}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer ${
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer shrink-0 ${
               isShapeActive
                 ? "bg-[#A85D44] text-white shadow-xs"
                 : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
@@ -579,7 +586,7 @@ export function AnnotationToolbar({
         <button
           type="button"
           onClick={() => onSelectTool("text")}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer ${
+          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer shrink-0 ${
             tool === "text"
               ? "bg-[#A85D44] text-white shadow-xs"
               : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
@@ -594,7 +601,7 @@ export function AnnotationToolbar({
         <button
           type="button"
           onClick={() => onSelectTool("eraser")}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer ${
+          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-full font-medium transition-colors cursor-pointer shrink-0 ${
             tool === "eraser"
               ? "bg-[#5D7063] text-white shadow-xs"
               : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
@@ -605,10 +612,10 @@ export function AnnotationToolbar({
           <span className="hidden md:inline">Eraser</span>
         </button>
 
-        <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
+        <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1 shrink-0" />
 
         {/* Color Palette Swatches */}
-        <div className="flex items-center gap-1 px-1">
+        <div className="flex items-center gap-1 px-1 shrink-0">
           {COLOR_PALETTE.map((c) => {
             const isSelected = selectedColor === c.value;
             return (
@@ -618,7 +625,7 @@ export function AnnotationToolbar({
                 onClick={() => onSelectColor(c.value)}
                 title={c.label}
                 aria-label={`Select ${c.label} color`}
-                className={`w-4 h-4 rounded-full transition-transform cursor-pointer ${
+                className={`w-4 h-4 rounded-full transition-transform cursor-pointer shrink-0 ${
                   isSelected ? "scale-125 ring-2 ring-offset-1 ring-stone-400 dark:ring-stone-500" : "hover:scale-110"
                 }`}
                 style={{ backgroundColor: c.value }}
@@ -627,14 +634,14 @@ export function AnnotationToolbar({
           })}
         </div>
 
-        <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
+        <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1 shrink-0" />
 
         {/* Undo Annotation */}
         <button
           type="button"
           onClick={onUndo}
           disabled={canUndo !== undefined ? !canUndo : strokeCount === 0}
-          className="p-1.5 rounded-full text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="p-1.5 rounded-full text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
           title="Undo (Ctrl+Z)"
           aria-label="Undo last annotation"
         >
@@ -647,7 +654,7 @@ export function AnnotationToolbar({
             type="button"
             onClick={onRedo}
             disabled={!canRedo}
-            className="p-1.5 rounded-full text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="p-1.5 rounded-full text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
             title="Redo (Ctrl+Y or Ctrl+Shift+Z)"
             aria-label="Redo last annotation"
           >
@@ -660,21 +667,21 @@ export function AnnotationToolbar({
           type="button"
           onClick={onClear}
           disabled={strokeCount === 0}
-          className="p-1.5 rounded-full text-[#757069] dark:text-[#948F86] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="p-1.5 rounded-full text-[#757069] dark:text-[#948F86] hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
           title="Clear all annotations"
           aria-label="Clear all annotations"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
 
-        <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1" />
+        <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1 shrink-0" />
 
         {/* Export Annotated PDF */}
         <button
           type="button"
           onClick={onExportPdf}
           disabled={isExporting}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#A85D44] hover:bg-[#8F4C35] disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium text-xs shadow-xs transition-colors cursor-pointer"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#A85D44] hover:bg-[#8F4C35] disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium text-xs shadow-xs transition-colors cursor-pointer shrink-0"
           title="Export Note with Annotations to PDF"
         >
           {isExporting ? (
@@ -685,6 +692,8 @@ export function AnnotationToolbar({
           <span>{isExporting ? "Baking PDF..." : "Save PDF"}</span>
         </button>
       </div>
-    </aside>
-  );
+      <div className="sm:hidden pointer-events-none absolute right-0 top-0 bottom-0 w-8 rounded-r-full bg-gradient-to-l from-[#FAF8F5] dark:from-[#21201E] to-transparent opacity-80" />
+    </div>
+  </aside>
+);
 }

@@ -7,11 +7,15 @@ Enables interactive in-browser annotations on lecture notes with freehand pen, h
 ## Requirements
 
 ### Requirement: Sticky annotation toolbar controls
-The reader view SHALL provide a sticky non-scrolling toolbar pinned at the top of the reading pane with mode selectors for freehand pen, highlighter, underline, shapes dropdown (rectangle, circle, arrow, line, star, cloud), text box, eraser, color choices, undo, and PDF export, defaulting to the pen tool upon note load.
+The reader view SHALL provide a sticky non-scrolling toolbar pinned at the top of the reading pane with mode selectors for freehand pen, highlighter, underline, shapes dropdown (rectangle, circle, arrow, line, star, cloud), text box, eraser, color choices, undo, and PDF export, defaulting to the pen tool upon note load and adapting responsively across mobile and desktop viewports.
 
 #### Scenario: Sticky toolbar remains visible during scrolling
 - **WHEN** a user scrolls vertically down through multi-page note content
-- **THEN** the annotation toolbar remains pinned at the top of the reading viewport floating cleanly below the application navbar (`top-20`) without being scrolled out of view by container overflow
+- **THEN** the annotation toolbar remains pinned flush below the application navbar (`top-16`) without detached gaps or being scrolled out of view by container overflow
+
+#### Scenario: Opaque toolbar coverage during scroll
+- **WHEN** note content or PDF pages scroll underneath the sticky annotation toolbar
+- **THEN** the toolbar renders with a solid 100% opaque surface completely covering underlying text and drawings without translucency or bleed-through
 
 #### Scenario: Switch between cursor and drawing modes
 - **WHEN** a user selects the pen, highlighter, shapes, or text box tool
@@ -45,6 +49,10 @@ The reader view SHALL provide a sticky non-scrolling toolbar pinned at the top o
 - **WHEN** a user completes drawing a new shape or clicks to select an existing shape
 - **THEN** the system automatically selects the shape and the sticky toolbar dynamically transforms into shape styling mode offering Done, Stroke Width selector (1.5pt, 2.5pt, 4pt), Fill Opacity selector (0%, 20%, 50%, 100%), color palette, and delete shape controls; opacity controls SHALL NOT be displayed in the default toolbar before a shape is drawn or selected
 
+#### Scenario: Responsive mobile toolbar containment
+- **WHEN** a user accesses the annotation toolbar on a narrow mobile viewport
+- **THEN** the toolbar maintains horizontal containment with smooth touch scrolling (`overflow-x-auto`) and visual scroll indicators rather than breaking awkwardly into multiple wrapped lines or leaving controls invisibly hidden
+
 ### Requirement: Layered vector drawing, highlighting, and underlining
 The system SHALL provide an interactive SVG vector overlay bounded to each individual PDF page that captures smooth freehand pen strokes, translucent highlighter bands with multiply blending, straight underlines, geometric vector shapes, and stroke/shape erasure.
 
@@ -61,8 +69,8 @@ The system SHALL provide an interactive SVG vector overlay bounded to each indiv
 - **THEN** the system renders a straight underline beneath the target text bounded to that page
 
 #### Scenario: Erasing strokes
-- **WHEN** a user clicks on an existing stroke, shape, or text box with the eraser tool
-- **THEN** the system removes that specific annotation from the target page's annotation layer
+- **WHEN** a user clicks on or drags across existing strokes, shapes, or text boxes with the eraser tool
+- **THEN** the system continuously detects intersected annotations within an eraser sweep radius and removes them from the target page's annotation layer in real time, and renders an interactive visual reticle following the cursor during active dragging
 
 #### Scenario: Drag-to-draw geometric shapes
 - **WHEN** a user selects a shape tool (rectangle, circle, arrow, line, star, or cloud) and drags across a page overlay
@@ -96,7 +104,7 @@ The system SHALL allow users to click anywhere on a PDF page canvas to insert, t
 - **THEN** the text box remains visible and editable with placeholder guidance until explicitly committed, deleted, or tool changed
 
 #### Scenario: Delete text box with eraser tool
-- **WHEN** a user clicks on an existing text box with the eraser tool
+- **WHEN** a user clicks on or sweeps across an existing text box with the eraser tool
 - **THEN** the system removes that text box from the page's annotation layer
 
 #### Scenario: Render text boxes in PDF export
@@ -134,7 +142,7 @@ The reader view SHALL allow exporting the lecture note and its vector annotation
 - **THEN** the system embeds standard Helvetica, Helvetica-Bold, Helvetica-Oblique, or Helvetica-BoldOblique font variants matching the text styling and bakes shape fill opacities natively into the output PDF byte stream
 
 ### Requirement: Multi-page PDF page rendering and text selection
-The reader view SHALL render uploaded PDF documents page-by-page using high-DPI canvas rendering, complete with a selectable text layer allowing text selection and copying.
+The reader view SHALL render uploaded PDF documents page-by-page using high-DPI canvas rendering, complete with a selectable text layer allowing text selection and copying, and dynamic fit-to-width viewport adaptation.
 
 #### Scenario: Render multiple PDF pages sequentially
 - **WHEN** a user opens a PDF-backed lecture note
@@ -147,3 +155,11 @@ The reader view SHALL render uploaded PDF documents page-by-page using high-DPI 
 #### Scenario: Zoom controls scale PDF and annotations proportionally
 - **WHEN** a user adjusts the zoom level (e.g. 100%, 125%, 150%, or Fit to Width)
 - **THEN** the system scales the PDF canvas, text layer, and vector annotation layers in exact lockstep maintaining 1:1 alignment
+
+#### Scenario: Mobile automatic fit-to-width page scaling
+- **WHEN** a user opens a PDF note on a mobile or narrow viewport
+- **THEN** the reader automatically computes and sets the initial zoom scale to fit the PDF page width to the available screen width with comfortable horizontal padding, avoiding horizontal document overflow
+
+#### Scenario: Zoom PDF via Ctrl/Cmd + wheel scroll gesture
+- **WHEN** a user scrolls the mouse wheel or pinches a trackpad while holding Ctrl or Cmd over the PDF viewer
+- **THEN** the system prevents default browser-level page zoom and scales the PDF document and annotation layers smoothly between 0.4x and 2.5x
