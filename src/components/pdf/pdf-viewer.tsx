@@ -191,11 +191,21 @@ export function PdfViewer({
 
   // Handle Ctrl / Cmd + wheel scroll to zoom PDF rather than zooming the entire webpage
   useEffect(() => {
-    const el = viewerRef.current;
-    if (!el) return;
-
     const handleWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || e.metaKey) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      const el = viewerRef.current;
+      if (!el) return;
+
+      const target = e.target as Node | null;
+      const isTargetInside = target ? el.contains(target) : false;
+      const rect = el.getBoundingClientRect();
+      const isCursorInside =
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom;
+
+      if (isTargetInside || isCursorInside) {
         e.preventDefault();
 
         let delta = e.deltaY;
@@ -215,10 +225,10 @@ export function PdfViewer({
       }
     };
 
-    el.addEventListener("wheel", handleWheel, { passive: false });
+    window.addEventListener("wheel", handleWheel, { passive: false });
 
     return () => {
-      el.removeEventListener("wheel", handleWheel);
+      window.removeEventListener("wheel", handleWheel);
     };
   }, []);
 
