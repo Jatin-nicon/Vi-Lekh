@@ -47,7 +47,7 @@ export function UserMenu() {
 
   return (
     <>
-      <div className="relative" ref={menuRef}>
+      <div className="relative z-50" ref={menuRef}>
         {user ? (
           // Logged In User Pill
           <button
