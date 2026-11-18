@@ -17,7 +17,7 @@ import {
 } from "./annotation-layer";
 import { PdfViewer } from "@/components/pdf/pdf-viewer";
 import { exportAnnotatedPdf } from "@/lib/pdf/pdf-export";
-import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle } from "lucide-react";
+import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe } from "lucide-react";
 import { formatDate } from "@/lib/utils";
 
 interface NoteReaderProps {
@@ -81,12 +81,62 @@ export function NoteReader({
     return null;
   }, [revision?.pdf_url, note.pdf_url, defaultPdfSource]);
 
-  // Fallback HTML content for non-PDF notes
+  // HTML / Web content
   const renderedContent = useMemo(() => {
     if (!blocks || blocks.length === 0) return "";
     const rawHtml = blocksToHtml(blocks);
     return renderMathInHtml(rawHtml);
   }, [blocks]);
+
+  const hasPdf = Boolean(effectivePdfSource);
+  const hasHtml = Boolean(
+    renderedContent &&
+    renderedContent.trim().length > 0 &&
+    renderedContent !== "<p></p>"
+  );
+
+  // Active view mode: "pdf" | "html"
+  const [viewMode, setViewMode] = useState<"pdf" | "html">(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("vilekh_preferred_reader_view");
+        if (saved === "html" && hasHtml) return "html";
+        if (saved === "pdf" && hasPdf) return "pdf";
+      } catch {
+        // Ignore
+      }
+    }
+    return effectivePdfSource ? "pdf" : "html";
+  });
+
+  // Keep viewMode synced if note changes
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("vilekh_preferred_reader_view");
+        if (saved === "html" && hasHtml) {
+          setViewMode("html");
+          return;
+        }
+        if (saved === "pdf" && hasPdf) {
+          setViewMode("pdf");
+          return;
+        }
+      } catch {
+        // Ignore
+      }
+    }
+    setViewMode(effectivePdfSource ? "pdf" : "html");
+  }, [note.id, effectivePdfSource, hasPdf, hasHtml]);
+
+  const handleSelectViewMode = useCallback((mode: "pdf" | "html") => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem("vilekh_preferred_reader_view", mode);
+    } catch {
+      // Ignore
+    }
+  }, []);
 
   // Compute total strokes, shapes, and text boxes across all pages
   const totalAnnotationCount = useMemo(() => {
@@ -499,7 +549,7 @@ export function NoteReader({
 
   // One-click Client-Side PDF vector export via pdf-lib
   const handleExportPdf = useCallback(async () => {
-    if (!effectivePdfSource) {
+    if (viewMode === "html" || !effectivePdfSource) {
       window.print();
       return;
     }
@@ -521,7 +571,7 @@ export function NoteReader({
     } finally {
       setIsExporting(false);
     }
-  }, [effectivePdfSource, pageStrokes, pageShapes, pageTextBoxes, note.id, note.title]);
+  }, [viewMode, effectivePdfSource, pageStrokes, pageShapes, pageTextBoxes, note.id, note.title]);
 
   // Stable handlers for per-page annotation updates
   const handlePageStrokesChange = useCallback((pageNum: number, newStrokes: AnnotationStroke[]) => {
@@ -645,7 +695,7 @@ export function NoteReader({
           onSelectShapeFillOpacity={setShapeFillOpacity}
         />
 
-        {/* Slim Meta Breadcrumb Bar with PDF status & Local File Switcher */}
+        {/* Slim Meta Breadcrumb Bar with PDF / Web Version Switcher */}
         <div className="print:hidden flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-[#E8E3D9] dark:border-[#33312E] text-xs text-[#757069] dark:text-[#948F86]">
           <div className="flex items-center gap-2">
             <span className="font-medium text-[#A85D44] dark:text-[#C4785E]">
@@ -655,11 +705,44 @@ export function NoteReader({
             <span className="font-semibold text-[#2D2926] dark:text-[#E3DFD7]">
               {note.title}
             </span>
-            {!effectivePdfSource && (
-              <span className="ml-1 px-2 py-0.5 rounded text-[10px] bg-stone-200/60 dark:bg-stone-800 text-stone-600 dark:text-stone-400 font-medium">
-                HTML Note
-              </span>
-            )}
+          </div>
+
+          {/* View Version Switcher: PDF vs Web/HTML */}
+          <div className="inline-flex items-center p-0.5 rounded-lg bg-[#EFEBE3] dark:bg-[#2B2A27] border border-[#E8E3D9] dark:border-[#383532] text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode("pdf")}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md transition-all cursor-pointer ${
+                viewMode === "pdf"
+                  ? "bg-white dark:bg-[#1E1D1B] text-[#A85D44] dark:text-[#C4785E] shadow-xs font-semibold"
+                  : "text-[#757069] dark:text-[#948F86] hover:text-[#2D2926] dark:hover:text-[#E3DFD7]"
+              }`}
+              title="Switch to PDF Document View"
+              aria-pressed={viewMode === "pdf"}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>PDF Version</span>
+              {hasPdf && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="PDF Document Available" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectViewMode("html")}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-md transition-all cursor-pointer ${
+                viewMode === "html"
+                  ? "bg-white dark:bg-[#1E1D1B] text-[#A85D44] dark:text-[#C4785E] shadow-xs font-semibold"
+                  : "text-[#757069] dark:text-[#948F86] hover:text-[#2D2926] dark:hover:text-[#E3DFD7]"
+              }`}
+              title="Switch to Interactive Web / HTML View"
+              aria-pressed={viewMode === "html"}
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>Web Version</span>
+              {hasHtml && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" title="Web Version Available" />
+              )}
+            </button>
           </div>
 
           <div className="flex items-center gap-3">
@@ -686,17 +769,17 @@ export function NoteReader({
           </div>
         )}
 
-        {/* PDF Document Continuous Viewer with Per-Page Interactive AnnotationLayer */}
-        {effectivePdfSource ? (
+        {/* Document Body (PDF Viewer or Web HTML Viewer) */}
+        {viewMode === "pdf" && effectivePdfSource ? (
           <PdfViewer
             pdfSource={effectivePdfSource}
             activePage={activePage}
             onActivePageChange={setActivePage}
             renderAnnotationLayer={renderAnnotationLayer}
           />
-        ) : renderedContent ? (
-          /* HTML Note View */
-          <div className="relative w-full transition-all">
+        ) : viewMode === "html" && renderedContent ? (
+          /* HTML / Web Version View */
+          <div className="relative w-full transition-all bg-[#FAF8F5] dark:bg-[#1C1B19] rounded-2xl p-6 sm:p-12 shadow-sm border border-[#E8E3D9] dark:border-[#33312E] min-h-[600px]">
             <HtmlSandboxedViewer html={renderedContent} />
             <AnnotationLayer
               noteId={note.id}
@@ -726,18 +809,47 @@ export function NoteReader({
               onRecordSnapshot={(snapshot) => handleRecordSnapshot(1, snapshot)}
             />
           </div>
-        ) : (
-          /* Empty State: No PDF and No Content */
+        ) : viewMode === "pdf" && !effectivePdfSource ? (
+          /* Empty PDF state */
           <div className="py-20 px-6 text-center max-w-md mx-auto my-8 bg-[#FAF8F5] dark:bg-[#21201E] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E]">
             <FileText className="w-10 h-10 text-[#A85D44] mx-auto mb-3 opacity-80" />
             <h3 className="text-base font-semibold text-[#2D2926] dark:text-[#E3DFD7] mb-1">
-              No PDF Uploaded
+              No PDF Document Uploaded
             </h3>
-            <p className="text-xs text-[#757069] dark:text-[#948F86]">
-              {isStaleBlobUrl
-                ? "The temporary PDF upload for this note has expired."
-                : "No document has been attached to this note yet."}
+            <p className="text-xs text-[#757069] dark:text-[#948F86] mb-4">
+              This note was authored as an interactive web note and does not have a PDF document attached.
             </p>
+            {hasHtml && (
+              <button
+                type="button"
+                onClick={() => handleSelectViewMode("html")}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#A85D44] hover:bg-[#8F4C35] text-white text-xs font-medium transition-colors cursor-pointer shadow-xs"
+              >
+                <Globe className="w-3.5 h-3.5" />
+                <span>Switch to Web Version</span>
+              </button>
+            )}
+          </div>
+        ) : (
+          /* Empty HTML state */
+          <div className="py-20 px-6 text-center max-w-md mx-auto my-8 bg-[#FAF8F5] dark:bg-[#21201E] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E]">
+            <Globe className="w-10 h-10 text-[#A85D44] mx-auto mb-3 opacity-80" />
+            <h3 className="text-base font-semibold text-[#2D2926] dark:text-[#E3DFD7] mb-1">
+              No Web Version Written Yet
+            </h3>
+            <p className="text-xs text-[#757069] dark:text-[#948F86] mb-4">
+              This note currently only has a PDF document uploaded.
+            </p>
+            {hasPdf && (
+              <button
+                type="button"
+                onClick={() => handleSelectViewMode("pdf")}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-[#A85D44] hover:bg-[#8F4C35] text-white text-xs font-medium transition-colors cursor-pointer shadow-xs"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Switch to PDF Version</span>
+              </button>
+            )}
           </div>
         )}
       </div>
