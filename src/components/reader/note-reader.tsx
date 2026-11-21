@@ -33,8 +33,14 @@ export function NoteReader({
   const blocks = revision?.blocks || [];
 
   // Annotation states
-  const [tool, setTool] = useState<AnnotationTool>("cursor");
+  const [tool, setTool] = useState<AnnotationTool | null>(() => {
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      return null;
+    }
+    return "cursor";
+  });
   const [color, setColor] = useState<string>("#A85D44");
+  const [penWidth, setPenWidth] = useState<number>(2.5);
   const [strokes, setStrokes] = useState<AnnotationStroke[]>([]);
   const [textBoxes, setTextBoxes] = useState<AnnotationTextBox[]>([]);
 
@@ -98,6 +104,8 @@ export function NoteReader({
           onSelectTool={setTool}
           selectedColor={color}
           onSelectColor={setColor}
+          penWidth={penWidth}
+          onSelectPenWidth={setPenWidth}
           strokeCount={strokes.length + textBoxes.length}
           onUndo={handleUndo}
           onClear={handleClear}
@@ -144,6 +152,7 @@ export function NoteReader({
               noteId={note.id}
               tool={tool}
               color={color}
+              penWidth={penWidth}
               strokes={strokes}
               onChangeStrokes={setStrokes}
               textBoxes={textBoxes}

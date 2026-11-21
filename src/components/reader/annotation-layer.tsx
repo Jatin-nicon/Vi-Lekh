@@ -31,8 +31,9 @@ export interface AnnotationTextBox {
 
 interface AnnotationLayerProps {
   noteId: string;
-  tool: AnnotationTool;
+  tool: AnnotationTool | null;
   color: string;
+  penWidth?: number;
   strokes: AnnotationStroke[];
   onChangeStrokes: (strokes: AnnotationStroke[]) => void;
   textBoxes?: AnnotationTextBox[];
@@ -63,6 +64,7 @@ export function AnnotationLayer({
   noteId,
   tool,
   color,
+  penWidth = 2.5,
   strokes,
   onChangeStrokes,
   textBoxes: propTextBoxes,
@@ -211,10 +213,105 @@ export function AnnotationLayer({
     };
   };
 
-  const isDrawingTool = tool === "pen" || tool === "highlighter" || tool === "underline";
+  const isDrawingTool = tool !== null && (tool === "pen" || tool === "highlighter" || tool === "underline");
+
+  // Two-finger pan gesture tracking to scroll without accidental drawing
+  const isTwoFingerActiveRef = useRef(false);
+  const touchStateRef = useRef<{
+    prevMidX: number;
+    prevMidY: number;
+    prevDist: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        isTwoFingerActiveRef.current = true;
+        setIsDrawing(false);
+        setCurrentStroke(null);
+
+        try {
+          for (let i = 0; i < e.touches.length; i++) {
+            svgEl.releasePointerCapture(e.touches[i].identifier);
+          }
+        } catch {
+          // Ignore
+        }
+
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const midX = (t1.clientX + t2.clientX) / 2;
+        const midY = (t1.clientY + t2.clientY) / 2;
+        const dist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+
+        touchStateRef.current = {
+          prevMidX: midX,
+          prevMidY: midY,
+          prevDist: dist,
+        };
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        if (e.cancelable) {
+          e.preventDefault();
+        }
+
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const currentMidX = (t1.clientX + t2.clientX) / 2;
+        const currentMidY = (t1.clientY + t2.clientY) / 2;
+        const currentDist = Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+
+        if (touchStateRef.current) {
+          const deltaX = currentMidX - touchStateRef.current.prevMidX;
+          const deltaY = currentMidY - touchStateRef.current.prevMidY;
+
+          // Two-finger scroll: pan window smoothly
+          if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
+            window.scrollBy(-deltaX, -deltaY);
+          }
+        }
+
+        touchStateRef.current = {
+          prevMidX: currentMidX,
+          prevMidY: currentMidY,
+          prevDist: currentDist,
+        };
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        touchStateRef.current = null;
+      }
+      if (e.touches.length === 0) {
+        setTimeout(() => {
+          isTwoFingerActiveRef.current = false;
+        }, 60);
+      }
+    };
+
+    svgEl.addEventListener("touchstart", handleTouchStart, { passive: false });
+    svgEl.addEventListener("touchmove", handleTouchMove, { passive: false });
+    svgEl.addEventListener("touchend", handleTouchEnd, { passive: true });
+    svgEl.addEventListener("touchcancel", handleTouchEnd, { passive: true });
+
+    return () => {
+      svgEl.removeEventListener("touchstart", handleTouchStart);
+      svgEl.removeEventListener("touchmove", handleTouchMove);
+      svgEl.removeEventListener("touchend", handleTouchEnd);
+      svgEl.removeEventListener("touchcancel", handleTouchEnd);
+    };
+  }, []);
 
   // 3. SVG Pointer event handlers for drawing
   const handleSvgPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (isTwoFingerActiveRef.current) return;
     if (!isDrawingTool) return;
 
     (e.target as Element).setPointerCapture(e.pointerId);
@@ -228,7 +325,7 @@ export function AnnotationLayer({
         tool: "pen",
         points: [pt],
         color,
-        width: 2.5,
+        width: penWidth || 2.5,
         opacity: 0.95,
       });
     } else if (tool === "highlighter") {
@@ -255,6 +352,7 @@ export function AnnotationLayer({
   };
 
   const handleSvgPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (isTwoFingerActiveRef.current) return;
     if (!isDrawing || !currentStroke) return;
 
     const pt = getPoint(e);
@@ -276,6 +374,17 @@ export function AnnotationLayer({
   };
 
   const handleSvgPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (isTwoFingerActiveRef.current) {
+      try {
+        (e.target as Element).releasePointerCapture(e.pointerId);
+      } catch {
+        // Ignore
+      }
+      setIsDrawing(false);
+      setCurrentStroke(null);
+      return;
+    }
+
     if (!isDrawing || !currentStroke) return;
 
     try {
@@ -300,6 +409,8 @@ export function AnnotationLayer({
 
   // 4. Text tool container click: spawn new Word/Docs-style text box or deselect on outside click
   const handleContainerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isTwoFingerActiveRef.current) return;
+
     // If clicked on an existing text box, button, or textarea, let child handle it
     const target = e.target as HTMLElement;
     if (
@@ -369,7 +480,7 @@ export function AnnotationLayer({
     }
   };
 
-  const isInteractive = tool !== "cursor";
+  const isInteractive = tool !== null && tool !== "cursor";
 
   return (
     <div
@@ -510,7 +621,7 @@ export function AnnotationLayer({
 
 interface WordDocsTextBoxItemProps {
   box: AnnotationTextBox;
-  tool: AnnotationTool;
+  tool: AnnotationTool | null;
   isSelected: boolean;
   onSelect: () => void;
   onDeselect: () => void;
