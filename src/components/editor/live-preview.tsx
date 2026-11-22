@@ -8,9 +8,10 @@ import { CheckCircle2 } from "lucide-react";
 interface LivePreviewProps {
   html: string;
   noteTitle: string;
+  className?: string;
 }
 
-export function LivePreview({ html }: LivePreviewProps) {
+export function LivePreview({ html, className = "" }: LivePreviewProps) {
   const renderedHtml = useMemo(() => {
     return renderMathInHtml(html);
   }, [html]);
@@ -18,7 +19,9 @@ export function LivePreview({ html }: LivePreviewProps) {
   const isEmpty = !html || !html.trim();
 
   return (
-    <div className="relative flex flex-col min-h-[550px] sm:min-h-[650px] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] shadow-sm overflow-hidden transition-colors">
+    <div
+      className={`relative flex flex-col h-[580px] xl:h-[650px] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] shadow-sm overflow-hidden transition-colors ${className}`}
+    >
       {/* Top Header Bar */}
       <div className="flex items-center justify-between border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/60 dark:bg-[#181716]/60 px-5 py-2.5 select-none shrink-0">
         <div className="flex items-center gap-2">
@@ -31,7 +34,7 @@ export function LivePreview({ html }: LivePreviewProps) {
       </div>
 
       {/* Scrollable Preview Canvas */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-8 leading-relaxed text-[#2D2926] dark:text-[#E3DFD7]">
+      <div className="flex-1 min-h-0 overflow-y-auto sidebar-scrollbar p-4 sm:p-8 leading-relaxed text-[#2D2926] dark:text-[#E3DFD7]">
         {isEmpty ? (
           <div className="py-20 text-center text-xs text-[#757069] dark:text-[#948F86] italic">
             Start typing in the HTML editor to see live reader preview here...
