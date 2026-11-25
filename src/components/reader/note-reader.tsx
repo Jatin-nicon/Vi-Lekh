@@ -17,7 +17,15 @@ import {
 } from "./annotation-layer";
 import { PdfViewer } from "@/components/pdf/pdf-viewer";
 import { exportAnnotatedPdf } from "@/lib/pdf/pdf-export";
-import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe } from "lucide-react";
+import { printPagedHtml } from "@/lib/pdf/html-print-export";
+import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  ANNOTATION_KINDS,
+  annotationStorageKey,
+  legacyAnnotationKey,
+  type AnnotationLayout,
+} from "@/lib/annotations/storage-keys";
+import { PAGE_HEIGHT, PAGE_WIDTH } from "@/lib/layout/paginate";
 import { formatDate } from "@/lib/utils";
 
 interface NoteReaderProps {
@@ -57,6 +65,10 @@ export function NoteReader({
   const [pageStrokes, setPageStrokes] = useState<Record<number, AnnotationStroke[]>>({});
   const [pageShapes, setPageShapes] = useState<Record<number, AnnotationShape[]>>({});
   const [pageTextBoxes, setPageTextBoxes] = useState<Record<number, AnnotationTextBox[]>>({});
+
+  // Undo/redo availability
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   // Active page tracked during scroll
   const [activePage, setActivePage] = useState<number>(1);
@@ -106,7 +118,8 @@ export function NoteReader({
         // Ignore
       }
     }
-    return effectivePdfSource ? "pdf" : "html";
+    // The HTML version is the main format: default to it when it exists.
+    return hasHtml ? "html" : "pdf";
   });
 
   // Keep viewMode synced if note changes
@@ -126,8 +139,8 @@ export function NoteReader({
         // Ignore
       }
     }
-    setViewMode(effectivePdfSource ? "pdf" : "html");
-  }, [note.id, effectivePdfSource, hasPdf, hasHtml]);
+    setViewMode(hasHtml ? "html" : "pdf");
+  }, [note.id, hasPdf, hasHtml]);
 
   const handleSelectViewMode = useCallback((mode: "pdf" | "html") => {
     setViewMode(mode);
@@ -137,6 +150,70 @@ export function NoteReader({
       // Ignore
     }
   }, []);
+
+  // Annotation storage layout follows the view: PDF pages or paged A4 HTML.
+  const annotationLayout: AnnotationLayout = viewMode === "html" ? "html-a4" : "pdf";
+  const [htmlZoom, setHtmlZoom] = useState(1);
+  const htmlViewRef = useRef<HTMLDivElement>(null);
+
+  // Each layout has its own pages, so reset in-memory annotation state when
+  // the layout changes (during render, before the new layers load from storage).
+  const [stateLayout, setStateLayout] = useState<AnnotationLayout>(annotationLayout);
+  if (stateLayout !== annotationLayout) {
+    setStateLayout(annotationLayout);
+    setPageStrokes({});
+    setPageShapes({});
+    setPageTextBoxes({});
+    setActiveTextId(null);
+    setActiveShapeId(null);
+    setActivePage(1);
+    setCanUndo(false);
+    setCanRedo(false);
+  }
+
+  // Persists one page of the current layout to localStorage.
+  const persistPage = useCallback(
+    (
+      pageNum: number,
+      data: { strokes?: AnnotationStroke[]; shapes?: AnnotationShape[]; textBoxes?: AnnotationTextBox[] }
+    ) => {
+      const entries: [ "annotations" | "shapes" | "textboxes", unknown[] | undefined][] = [
+        ["annotations", data.strokes],
+        ["shapes", data.shapes],
+        ["textboxes", data.textBoxes],
+      ];
+      try {
+        for (const [kind, value] of entries) {
+          if (!value) continue;
+          localStorage.setItem(annotationStorageKey(annotationLayout, kind, note.id, pageNum), JSON.stringify(value));
+          // PDF page 1 keeps mirroring the old single-layer keys, as before.
+          if (annotationLayout === "pdf" && pageNum === 1) {
+            localStorage.setItem(legacyAnnotationKey(kind, note.id), JSON.stringify(value));
+          }
+        }
+      } catch {
+        // Ignore storage errors (e.g. quota)
+      }
+    },
+    [annotationLayout, note.id]
+  );
+
+  // Removes one page of the current layout from localStorage.
+  const removePage = useCallback(
+    (pageNum: number) => {
+      try {
+        for (const kind of ANNOTATION_KINDS) {
+          localStorage.removeItem(annotationStorageKey(annotationLayout, kind, note.id, pageNum));
+          if (annotationLayout === "pdf" && pageNum === 1) {
+            localStorage.removeItem(legacyAnnotationKey(kind, note.id));
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    },
+    [annotationLayout, note.id]
+  );
 
   // Compute total strokes, shapes, and text boxes across all pages
   const totalAnnotationCount = useMemo(() => {
@@ -159,8 +236,6 @@ export function NoteReader({
     shapes: AnnotationShape[];
     textBoxes: AnnotationTextBox[];
   }[]>([]);
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
 
   // Latest page state refs to prevent stale closure captures during rapid history actions
   const pageStrokesRef = useRef(pageStrokes);
@@ -169,6 +244,12 @@ export function NoteReader({
   pageStrokesRef.current = pageStrokes;
   pageShapesRef.current = pageShapes;
   pageTextBoxesRef.current = pageTextBoxes;
+
+  // Undo history belongs to one layout.
+  useEffect(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+  }, [annotationLayout]);
 
   const updateHistoryState = useCallback(() => {
     setCanUndo(undoStackRef.current.length > 0);
@@ -227,43 +308,14 @@ export function NoteReader({
     setPageTextBoxes((prev) => ({ ...prev, [pageNum]: targetSnapshot.textBoxes }));
 
     // Persist restored state to localStorage
-    try {
-      localStorage.setItem(
-        `vilekh_pdf_annotations_${note.id}_page_${pageNum}`,
-        JSON.stringify(targetSnapshot.strokes)
-      );
-      localStorage.setItem(
-        `vilekh_pdf_shapes_${note.id}_page_${pageNum}`,
-        JSON.stringify(targetSnapshot.shapes)
-      );
-      localStorage.setItem(
-        `vilekh_pdf_textboxes_${note.id}_page_${pageNum}`,
-        JSON.stringify(targetSnapshot.textBoxes)
-      );
-      if (pageNum === 1) {
-        localStorage.setItem(
-          `vilekh_annotations_${note.id}`,
-          JSON.stringify(targetSnapshot.strokes)
-        );
-        localStorage.setItem(
-          `vilekh_shapes_${note.id}`,
-          JSON.stringify(targetSnapshot.shapes)
-        );
-        localStorage.setItem(
-          `vilekh_textboxes_${note.id}`,
-          JSON.stringify(targetSnapshot.textBoxes)
-        );
-      }
-    } catch {
-      // Ignore
-    }
+    persistPage(pageNum, targetSnapshot);
 
     if (activePage !== pageNum) {
       setActivePage(pageNum);
     }
 
     updateHistoryState();
-  }, [activePage, note.id, updateHistoryState]);
+  }, [activePage, persistPage, updateHistoryState]);
 
   // Redo previously undone action
   const handleRedo = useCallback(() => {
@@ -290,43 +342,14 @@ export function NoteReader({
     setPageTextBoxes((prev) => ({ ...prev, [pageNum]: targetSnapshot.textBoxes }));
 
     // Persist restored state to localStorage
-    try {
-      localStorage.setItem(
-        `vilekh_pdf_annotations_${note.id}_page_${pageNum}`,
-        JSON.stringify(targetSnapshot.strokes)
-      );
-      localStorage.setItem(
-        `vilekh_pdf_shapes_${note.id}_page_${pageNum}`,
-        JSON.stringify(targetSnapshot.shapes)
-      );
-      localStorage.setItem(
-        `vilekh_pdf_textboxes_${note.id}_page_${pageNum}`,
-        JSON.stringify(targetSnapshot.textBoxes)
-      );
-      if (pageNum === 1) {
-        localStorage.setItem(
-          `vilekh_annotations_${note.id}`,
-          JSON.stringify(targetSnapshot.strokes)
-        );
-        localStorage.setItem(
-          `vilekh_shapes_${note.id}`,
-          JSON.stringify(targetSnapshot.shapes)
-        );
-        localStorage.setItem(
-          `vilekh_textboxes_${note.id}`,
-          JSON.stringify(targetSnapshot.textBoxes)
-        );
-      }
-    } catch {
-      // Ignore
-    }
+    persistPage(pageNum, targetSnapshot);
 
     if (activePage !== pageNum) {
       setActivePage(pageNum);
     }
 
     updateHistoryState();
-  }, [activePage, note.id, updateHistoryState]);
+  }, [activePage, persistPage, updateHistoryState]);
 
   // Global keyboard shortcuts for Undo (Ctrl+Z) and Redo (Ctrl+Y / Ctrl+Shift+Z)
   useEffect(() => {
@@ -374,36 +397,14 @@ export function NoteReader({
       setPageStrokes({});
       setPageShapes({});
       setPageTextBoxes({});
-      try {
-        for (let i = 1; i <= 100; i++) {
-          localStorage.removeItem(`vilekh_pdf_annotations_${note.id}_page_${i}`);
-          localStorage.removeItem(`vilekh_pdf_shapes_${note.id}_page_${i}`);
-          localStorage.removeItem(`vilekh_pdf_textboxes_${note.id}_page_${i}`);
-        }
-        localStorage.removeItem(`vilekh_annotations_${note.id}`);
-        localStorage.removeItem(`vilekh_shapes_${note.id}`);
-        localStorage.removeItem(`vilekh_textboxes_${note.id}`);
-      } catch {
-        // Ignore
-      }
+      for (let i = 1; i <= 100; i++) removePage(i);
     } else {
       setPageStrokes((prev) => ({ ...prev, [activePage]: [] }));
       setPageShapes((prev) => ({ ...prev, [activePage]: [] }));
       setPageTextBoxes((prev) => ({ ...prev, [activePage]: [] }));
-      try {
-        localStorage.removeItem(`vilekh_pdf_annotations_${note.id}_page_${activePage}`);
-        localStorage.removeItem(`vilekh_pdf_shapes_${note.id}_page_${activePage}`);
-        localStorage.removeItem(`vilekh_pdf_textboxes_${note.id}_page_${activePage}`);
-        if (activePage === 1) {
-          localStorage.removeItem(`vilekh_annotations_${note.id}`);
-          localStorage.removeItem(`vilekh_shapes_${note.id}`);
-          localStorage.removeItem(`vilekh_textboxes_${note.id}`);
-        }
-      } catch {
-        // Ignore
-      }
+      removePage(activePage);
     }
-  }, [totalAnnotationCount, activePage, handleRecordSnapshot, note.id]);
+  }, [totalAnnotationCount, activePage, handleRecordSnapshot, removePage]);
 
   // Find currently active text box across pages
   const activeTextBox = useMemo(() => {
@@ -440,7 +441,7 @@ export function NoteReader({
             next[pNum] = updatedList;
             try {
               localStorage.setItem(
-                `vilekh_pdf_textboxes_${note.id}_page_${pNum}`,
+                annotationStorageKey(annotationLayout, "textboxes", note.id, pNum),
                 JSON.stringify(updatedList)
               );
             } catch {
@@ -452,7 +453,7 @@ export function NoteReader({
         return next;
       });
     },
-    [activeTextId, note.id]
+    [activeTextId, annotationLayout, note.id]
   );
 
   const handleDeleteActiveTextBox = useCallback(() => {
@@ -472,7 +473,7 @@ export function NoteReader({
           next[pNum] = updatedList;
           try {
             localStorage.setItem(
-              `vilekh_pdf_textboxes_${note.id}_page_${pNum}`,
+              annotationStorageKey(annotationLayout, "textboxes", note.id, pNum),
               JSON.stringify(updatedList)
             );
           } catch {
@@ -484,7 +485,7 @@ export function NoteReader({
       return next;
     });
     setActiveTextId(null);
-  }, [activeTextId, handleRecordSnapshot, note.id, pageShapes, pageStrokes]);
+  }, [activeTextId, annotationLayout, handleRecordSnapshot, note.id, pageShapes, pageStrokes]);
 
   const handleUpdateActiveShape = useCallback(
     (updates: Partial<AnnotationShape>) => {
@@ -501,7 +502,7 @@ export function NoteReader({
             next[pNum] = updatedList;
             try {
               localStorage.setItem(
-                `vilekh_pdf_shapes_${note.id}_page_${pNum}`,
+                annotationStorageKey(annotationLayout, "shapes", note.id, pNum),
                 JSON.stringify(updatedList)
               );
             } catch {
@@ -513,7 +514,7 @@ export function NoteReader({
         return next;
       });
     },
-    [activeShapeId, note.id]
+    [activeShapeId, annotationLayout, note.id]
   );
 
   const handleDeleteActiveShape = useCallback(() => {
@@ -533,7 +534,7 @@ export function NoteReader({
           next[pNum] = updatedList;
           try {
             localStorage.setItem(
-              `vilekh_pdf_shapes_${note.id}_page_${pNum}`,
+              annotationStorageKey(annotationLayout, "shapes", note.id, pNum),
               JSON.stringify(updatedList)
             );
           } catch {
@@ -545,11 +546,34 @@ export function NoteReader({
       return next;
     });
     setActiveShapeId(null);
-  }, [activeShapeId, handleRecordSnapshot, note.id, pageStrokes, pageTextBoxes]);
+  }, [activeShapeId, annotationLayout, handleRecordSnapshot, note.id, pageStrokes, pageTextBoxes]);
 
   // One-click Client-Side PDF vector export via pdf-lib
   const handleExportPdf = useCallback(async () => {
-    if (viewMode === "html" || !effectivePdfSource) {
+    if (viewMode === "html") {
+      // Paged HTML: print the same A4 pages with their annotations (design D4).
+      const wrapper = htmlViewRef.current;
+      const viewerHost = wrapper?.querySelector<HTMLElement>(".html-sandboxed-viewer-host");
+      if (!wrapper || !viewerHost) {
+        window.print();
+        return;
+      }
+      try {
+        setIsExporting(true);
+        // Deselect so no selection handles or edit controls are printed.
+        setActiveTextId(null);
+        setActiveShapeId(null);
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        await printPagedHtml({ viewerHost, overlayRoot: wrapper, title: note.title });
+      } catch (err) {
+        console.error("Failed to export HTML version:", err);
+        window.print();
+      } finally {
+        setIsExporting(false);
+      }
+      return;
+    }
+    if (!effectivePdfSource) {
       window.print();
       return;
     }
@@ -600,6 +624,7 @@ export function NoteReader({
       <AnnotationLayer
         noteId={note.id}
         pageNumber={pageNum}
+        layout={annotationLayout}
         scale={dims.scale}
         intrinsicWidth={dims.intrinsicWidth}
         intrinsicHeight={dims.intrinsicHeight}
@@ -631,6 +656,7 @@ export function NoteReader({
     ),
     [
       note.id,
+      annotationLayout,
       tool,
       color,
       penWidth,
@@ -778,35 +804,58 @@ export function NoteReader({
             renderAnnotationLayer={renderAnnotationLayer}
           />
         ) : viewMode === "html" && renderedContent ? (
-          /* HTML / Web Version View */
-          <div className="relative w-full transition-all bg-[#FAF8F5] dark:bg-[#1C1B19] rounded-2xl p-6 sm:p-12 shadow-sm border border-[#E8E3D9] dark:border-[#33312E] min-h-[600px]">
-            <HtmlSandboxedViewer html={renderedContent} />
-            <AnnotationLayer
-              noteId={note.id}
-              pageNumber={1}
-              scale={1.0}
-              tool={tool}
-              color={color}
-              penWidth={penWidth}
-              shapeWidth={shapeWidth}
-              shapeFillOpacity={shapeFillOpacity}
-              strokes={pageStrokes[1] || []}
-              onChangeStrokes={(strokes) => handlePageStrokesChange(1, strokes)}
-              shapes={pageShapes[1] || []}
-              onChangeShapes={(shapes) => handlePageShapesChange(1, shapes)}
-              textBoxes={pageTextBoxes[1] || []}
-              onChangeTextBoxes={(boxes) => handlePageTextBoxesChange(1, boxes)}
-              activeShapeId={activeShapeId}
-              onSelectShape={(id) => {
-                setActiveShapeId(id);
-                if (id) setActiveTextId(null);
-              }}
-              activeTextId={activeTextId}
-              onSelectText={(id) => {
-                setActiveTextId(id);
-                if (id) setActiveShapeId(null);
-              }}
-              onRecordSnapshot={(snapshot) => handleRecordSnapshot(1, snapshot)}
+          /* HTML / Web Version View: fixed A4 pages scaled to fit (design D1) */
+          <div ref={htmlViewRef} className="relative w-full rounded-2xl bg-[#EFEBE3] dark:bg-[#161514] border border-[#E8E3D9] dark:border-[#33312E] p-2 sm:p-6 print:p-0 print:border-0 print:bg-transparent">
+            <div className="print:hidden sticky top-2 z-20 mb-3 flex justify-end">
+              <div className="inline-flex items-center gap-1 rounded-lg border border-[#E8E3D9] dark:border-[#383532] bg-white/90 dark:bg-[#1E1D1B]/90 px-1 py-0.5 text-xs text-[#757069] dark:text-[#948F86] shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setHtmlZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}
+                  disabled={htmlZoom <= 0.5}
+                  className="p-1 rounded hover:text-[#2D2926] dark:hover:text-[#E3DFD7] disabled:opacity-40 cursor-pointer"
+                  title="Zoom out"
+                  aria-label="Zoom out"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHtmlZoom(1)}
+                  className="min-w-[3rem] px-1 font-medium tabular-nums cursor-pointer"
+                  title="Fit to width"
+                >
+                  {Math.round(htmlZoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHtmlZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
+                  disabled={htmlZoom >= 3}
+                  className="p-1 rounded hover:text-[#2D2926] dark:hover:text-[#E3DFD7] disabled:opacity-40 cursor-pointer"
+                  title="Zoom in"
+                  aria-label="Zoom in"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+            <HtmlSandboxedViewer
+              html={renderedContent}
+              paged
+              zoom={htmlZoom}
+              renderPageOverlay={(pageIndex, { scale }) => (
+                <div
+                  className="absolute inset-0"
+                  onPointerDownCapture={() => setActivePage(pageIndex + 1)}
+                >
+                  {renderAnnotationLayer(pageIndex + 1, {
+                    scale,
+                    width: PAGE_WIDTH * scale,
+                    height: PAGE_HEIGHT * scale,
+                    intrinsicWidth: PAGE_WIDTH,
+                    intrinsicHeight: PAGE_HEIGHT,
+                  })}
+                </div>
+              )}
             />
           </div>
         ) : viewMode === "pdf" && !effectivePdfSource ? (
