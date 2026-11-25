@@ -22,9 +22,13 @@ import {
   BookOpen,
   UserRound,
   FlaskConical,
+  ImagePlus,
+  Loader2,
+  X,
 } from "lucide-react";
 import { findUnbundledFonts } from "@/lib/layout/font-check";
-import { contributionSnippet, type Contributor } from "@/lib/editor/contribution-snippets";
+import { contributionSnippet, imageSnippet, type Contributor } from "@/lib/editor/contribution-snippets";
+import { uploadImage } from "@/lib/services/image-upload";
 
 interface HtmlNoteEditorProps {
   value: string;
@@ -53,7 +57,10 @@ export function HtmlNoteEditor({
 }: HtmlNoteEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [copied, setCopied] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [isAddingImage, setIsAddingImage] = useState(false);
 
   // Synchronize gutter scroll with textarea
   const handleScroll = () => {
@@ -151,6 +158,27 @@ export function HtmlNoteEditor({
     },
     [value, onChange]
   );
+
+  // Image action: optimize the chosen file in the browser and embed it at the cursor.
+  const handleImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow choosing the same file again
+    if (!file) return;
+    setImageError(null);
+    if (!file.type.startsWith("image/")) {
+      setImageError(`“${file.name}” is not an image. Choose a JPEG, PNG, WebP, GIF or SVG file.`);
+      return;
+    }
+    try {
+      setIsAddingImage(true);
+      const src = await uploadImage(file);
+      insertSnippet(imageSnippet(src, file.name));
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : "The image could not be added.");
+    } finally {
+      setIsAddingImage(false);
+    }
+  };
 
   const handleCopy = () => {
     if (!value) return;
@@ -319,6 +347,28 @@ export function HtmlNoteEditor({
               ))}
             </div>
           ))}
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={isAddingImage}
+            title="Insert an image from a file"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold text-[#757069] dark:text-[#948F86] hover:text-[#2D2926] dark:hover:text-[#E3DFD7] hover:bg-white dark:hover:bg-[#2E2B29] transition-all cursor-pointer shadow-2xs border border-transparent hover:border-[#E8E3D9] dark:hover:border-[#33312E] disabled:opacity-60 disabled:cursor-wait"
+          >
+            {isAddingImage ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <ImagePlus className="w-3.5 h-3.5 text-[#5D7063]" />
+            )}
+            <span>Image</span>
+          </button>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageFile}
+            aria-label="Choose an image to insert"
+          />
         </div>
 
         <div className="flex items-center gap-2">
@@ -333,6 +383,24 @@ export function HtmlNoteEditor({
           </button>
         </div>
       </div>
+
+      {imageError && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 border-b border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 px-4 py-2 text-xs text-red-800 dark:text-red-300"
+        >
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <span className="flex-1">{imageError}</span>
+          <button
+            type="button"
+            onClick={() => setImageError(null)}
+            className="shrink-0 cursor-pointer opacity-70 hover:opacity-100"
+            aria-label="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {unbundledFonts.length > 0 && (
         <div
