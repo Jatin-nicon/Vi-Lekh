@@ -814,7 +814,7 @@ export function AnnotationLayer({
 
           // Two-finger scroll: pan window smoothly
           if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
-            window.scrollBy(-deltaX, -deltaY);
+            (containerRef.current?.closest("[data-reader-scroller]") ?? window).scrollBy(-deltaX, -deltaY);
           }
 
           // Two-finger pinch: zoom PDF scale
