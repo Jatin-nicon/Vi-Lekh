@@ -1,6 +1,6 @@
 "use client";
 
-import { PDFDocument, StandardFonts, rgb, LineCapStyle, BlendMode } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb, degrees, LineCapStyle, BlendMode } from "pdf-lib";
 import {
   pointsToSvgPath,
   arrowToSvgPath,
@@ -45,6 +45,12 @@ function parseColor(colorStr: string): { r: number; g: number; b: number; a: num
   }
 
   return { r: 0.17, g: 0.16, b: 0.15, a: 1 };
+}
+
+async function fetchFont(url: string): Promise<ArrayBuffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Could not load font ${url}`);
+  return res.arrayBuffer();
 }
 
 function wrapText(text: string, maxWidth: number, font: any, fontSize: number): string[] {
@@ -110,6 +116,25 @@ export async function exportAnnotatedPdf({
   const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
   const italicFont = await pdfDoc.embedFont(StandardFonts.HelveticaOblique);
   const boldItalicFont = await pdfDoc.embedFont(StandardFonts.HelveticaBoldOblique);
+
+  // Handwriting (Caveat) is embedded only when a text box uses it.
+  let handFonts: { regular: typeof regularFont; bold: typeof regularFont } | null = null;
+  const loadHandFonts = async () => {
+    if (handFonts) return handFonts;
+    const [{ default: fontkit }, regular, bold] = await Promise.all([
+      import("@pdf-lib/fontkit"),
+      fetchFont("/fonts/caveat-latin-400.ttf"),
+      fetchFont("/fonts/caveat-latin-700.ttf"),
+    ]);
+    pdfDoc.registerFontkit(fontkit);
+    // Contextual alternates have no Unicode mapping, so copied text would be wrong.
+    const options = { features: { calt: false, liga: false } };
+    handFonts = {
+      regular: await pdfDoc.embedFont(regular, options),
+      bold: await pdfDoc.embedFont(bold, options),
+    };
+    return handFonts;
+  };
 
   // 3. Bake annotations page by page
   for (let pageIdx = 0; pageIdx < pages.length; pageIdx++) {
@@ -365,8 +390,12 @@ export async function exportAnnotatedPdf({
       const boxWidth = Math.max(120, box.width || 220);
       const isBold = Boolean(box.bold);
       const isItalic = Boolean(box.italic);
-      const boxFont =
-        isBold && isItalic
+      const hand = box.font === "hand" ? await loadHandFonts() : null;
+      const boxFont = hand
+        ? isBold
+          ? hand.bold
+          : hand.regular
+        : isBold && isItalic
           ? boldItalicFont
           : isBold
           ? boldFont
@@ -406,6 +435,8 @@ export async function exportAnnotatedPdf({
           y: Math.max(0, pdfY + boxHeight - padding - (lineIdx + 1) * lineHeight + 3),
           size: fontSize,
           font: boxFont,
+          // Caveat has no italic face; slant it as browsers do.
+          ...(hand && isItalic ? { xSkew: degrees(0), ySkew: degrees(14) } : {}),
           color: rgb(parsedColor.r, parsedColor.g, parsedColor.b),
         });
       }
