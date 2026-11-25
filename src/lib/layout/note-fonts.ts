@@ -10,6 +10,8 @@
 export const NOTE_SERIF = '"Vi-Lekh Serif"';
 export const NOTE_SANS = '"Vi-Lekh Sans"';
 export const NOTE_MONO = '"Vi-Lekh Mono"';
+/** Handwriting face (Caveat) used by imported lesson notes. */
+export const NOTE_HAND = '"Vi-Lekh Hand"';
 
 export const NOTE_BODY_STACK = `${NOTE_SERIF}, Georgia, serif`;
 export const NOTE_HEADING_STACK = `${NOTE_SANS}, system-ui, sans-serif`;
@@ -20,6 +22,7 @@ export const BUNDLED_FONT_FAMILIES = [
   "vi-lekh serif",
   "vi-lekh sans",
   "vi-lekh mono",
+  "vi-lekh hand",
   // KaTeX ships its own fonts.
   "katex_main",
   "katex_math",
@@ -40,14 +43,15 @@ const LATIN =
 const LATIN_EXT =
   "U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF";
 
-const FAMILIES: { family: string; file: string; weight: string }[] = [
+const FAMILIES: { family: string; file: string; weight: string; italic?: false }[] = [
   { family: NOTE_SERIF, file: "source-serif-4", weight: "200 900" },
   { family: NOTE_SANS, file: "inter", weight: "100 900" },
   { family: NOTE_MONO, file: "jetbrains-mono", weight: "100 800" },
+  { family: NOTE_HAND, file: "caveat", weight: "400 700", italic: false },
 ];
 
-export const NOTE_FONT_FACE_CSS = FAMILIES.flatMap(({ family, file, weight }) =>
-  (["normal", "italic"] as const).flatMap((style) =>
+export const NOTE_FONT_FACE_CSS = FAMILIES.flatMap(({ family, file, weight, italic }) =>
+  (italic === false ? (["normal"] as const) : (["normal", "italic"] as const)).flatMap((style) =>
     (
       [
         ["latin-ext", LATIN_EXT],
@@ -89,6 +93,7 @@ export async function loadNoteFonts(doc: Document = document): Promise<void> {
     doc.fonts.load(`italic 400 16px ${NOTE_SERIF}`),
     doc.fonts.load(`700 16px ${NOTE_SANS}`),
     doc.fonts.load(`400 16px ${NOTE_MONO}`),
+    doc.fonts.load(`400 16px ${NOTE_HAND}`),
   ]);
   await doc.fonts.ready;
 }
