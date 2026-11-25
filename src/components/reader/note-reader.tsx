@@ -16,6 +16,7 @@ import {
   type AnnotationShape,
 } from "./annotation-layer";
 import { PdfViewer } from "@/components/pdf/pdf-viewer";
+import { DOCUMENT_WIDTH, isHtmlDocument } from "@/lib/layout/document-html";
 import { useFullscreen } from "./use-fullscreen";
 import { fieldAtPoint, formFieldsKey } from "@/lib/layout/form-fields";
 import { exportAnnotatedPdf } from "@/lib/pdf/pdf-export";
@@ -27,7 +28,7 @@ import {
   legacyAnnotationKey,
   type AnnotationLayout,
 } from "@/lib/annotations/storage-keys";
-import { PAGE_HEIGHT, PAGE_WIDTH } from "@/lib/layout/paginate";
+import { PAGE_WIDTH } from "@/lib/layout/paginate";
 import { formatDate } from "@/lib/utils";
 
 interface NoteReaderProps {
@@ -149,7 +150,10 @@ export function NoteReader({
   }, []);
 
   // Annotation storage layout follows the view: PDF pages or paged A4 HTML.
-  const annotationLayout: AnnotationLayout = viewMode === "html" ? "html-a4" : "pdf";
+  // A complete HTML document is one continuous page; other notes are A4 pages.
+  const isDocument = useMemo(() => isHtmlDocument(renderedContent), [renderedContent]);
+  const annotationLayout: AnnotationLayout = 
+    viewMode !== "html" ? "pdf" : isDocument ? "html-page" : "html-a4";
   const [htmlZoom, setHtmlZoom] = useState(1);
   const htmlViewRef = useRef<HTMLDivElement>(null);
   const readerRef = useRef<HTMLDivElement>(null);
@@ -162,7 +166,7 @@ export function NoteReader({
   if (wasFullscreen !== isFullscreen) {
     setWasFullscreen(isFullscreen);
     if (isFullscreen) {
-      const room = Math.floor(((window.screen.width - 96) / PAGE_WIDTH) * 4) / 4;
+      const room = Math.floor(((window.screen.width - 64) / (isDocument ? DOCUMENT_WIDTH : PAGE_WIDTH)) * 4) / 4;
       setZoomBeforeFullscreen(htmlZoom);
       setHtmlZoom(Math.max(htmlZoom, 1, Math.min(1.5, room)));
     } else {
@@ -848,7 +852,7 @@ export function NoteReader({
           />
         ) : viewMode === "html" && renderedContent ? (
           /* HTML / Web Version View: fixed A4 pages scaled to fit (design D1) */
-          <div ref={htmlViewRef} className="relative w-full rounded-2xl bg-[#EFEBE3] dark:bg-[#161514] border border-[#E8E3D9] dark:border-[#33312E] p-2 sm:p-6 print:p-0 print:border-0 print:bg-transparent">
+          <div ref={htmlViewRef} className={`relative w-full rounded-2xl ${isDocument ? "bg-[#F1F5F9] p-2" : "bg-[#EFEBE3] dark:bg-[#161514] p-2 sm:p-6"} border border-[#E8E3D9] dark:border-[#33312E] print:p-0 print:border-0 print:bg-transparent`}>
             <div className="print:hidden sticky top-2 z-20 mb-3 flex justify-end">
               <div className="inline-flex items-center gap-1 rounded-lg border border-[#E8E3D9] dark:border-[#383532] bg-white/90 dark:bg-[#1E1D1B]/90 px-1 py-0.5 text-xs text-[#757069] dark:text-[#948F86] shadow-xs">
                 <button
@@ -886,7 +890,7 @@ export function NoteReader({
               paged
               zoom={htmlZoom}
               fieldsKey={formFieldsKey(note.id)}
-              renderPageOverlay={(pageIndex, { scale }) => (
+              renderPageOverlay={(pageIndex, { scale, pageWidth, pageHeight }) => (
                 <div
                   className="pointer-events-none absolute inset-0"
                   onPointerDownCapture={(e) => {
@@ -904,10 +908,10 @@ export function NoteReader({
                 >
                   {renderAnnotationLayer(pageIndex + 1, {
                     scale,
-                    width: PAGE_WIDTH * scale,
-                    height: PAGE_HEIGHT * scale,
-                    intrinsicWidth: PAGE_WIDTH,
-                    intrinsicHeight: PAGE_HEIGHT,
+                    width: pageWidth * scale,
+                    height: pageHeight * scale,
+                    intrinsicWidth: pageWidth,
+                    intrinsicHeight: pageHeight,
                   })}
                 </div>
               )}
