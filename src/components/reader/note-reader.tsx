@@ -16,6 +16,7 @@ import {
   type AnnotationShape,
 } from "./annotation-layer";
 import { PdfViewer } from "@/components/pdf/pdf-viewer";
+import { formFieldsKey } from "@/lib/layout/form-fields";
 import { exportAnnotatedPdf } from "@/lib/pdf/pdf-export";
 import { printPagedHtml } from "@/lib/pdf/html-print-export";
 import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe, ZoomIn, ZoomOut } from "lucide-react";
@@ -842,9 +843,10 @@ export function NoteReader({
               html={renderedContent}
               paged
               zoom={htmlZoom}
+              fieldsKey={formFieldsKey(note.id)}
               renderPageOverlay={(pageIndex, { scale }) => (
                 <div
-                  className="absolute inset-0"
+                  className="pointer-events-none absolute inset-0"
                   onPointerDownCapture={() => setActivePage(pageIndex + 1)}
                 >
                   {renderAnnotationLayer(pageIndex + 1, {
