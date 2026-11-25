@@ -18,7 +18,9 @@ import {
   Copy,
   Check,
   RotateCcw,
+  AlertTriangle,
 } from "lucide-react";
+import { findUnbundledFonts } from "@/lib/layout/font-check";
 
 interface HtmlNoteEditorProps {
   value: string;
@@ -64,6 +66,9 @@ export function HtmlNoteEditor({
       chars: value.length,
     };
   }, [value, lines.length]);
+
+  // Fonts that are not bundled lay out differently per device (design D2).
+  const unbundledFonts = useMemo(() => findUnbundledFonts(value), [value]);
 
   // Handle Tab key (2 spaces) and Enter key (auto-indent)
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -296,6 +301,27 @@ export function HtmlNoteEditor({
           </button>
         </div>
       </div>
+
+      {unbundledFonts.length > 0 && (
+        <div
+          role="status"
+          className="flex items-start gap-2 border-b border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-4 py-2 text-xs text-amber-800 dark:text-amber-300"
+        >
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>
+            {unbundledFonts.length === 1 ? "The font " : "The fonts "}
+            {unbundledFonts.map((f, i) => (
+              <React.Fragment key={f}>
+                {i > 0 && ", "}
+                <code className="font-mono font-semibold">{f}</code>
+              </React.Fragment>
+            ))}{" "}
+            {unbundledFonts.length === 1 ? "isn’t" : "aren’t"} bundled, so line breaks can differ between
+            devices and readers’ annotations may not line up. Remove the <code className="font-mono">font-family</code>{" "}
+            to use the default note fonts.
+          </span>
+        </div>
+      )}
 
       {/* Editor Body with Synchronized Line Gutter */}
       <div className="relative flex-1 flex min-h-[460px] bg-[#FAF8F5] dark:bg-[#181615] overflow-hidden">
