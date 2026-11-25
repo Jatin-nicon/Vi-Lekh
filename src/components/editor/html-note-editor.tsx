@@ -260,7 +260,7 @@ export function HtmlNoteEditor({
 
   return (
     <div
-      className={`relative flex flex-col min-h-[550px] sm:min-h-[650px] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#1C1A19] shadow-sm overflow-hidden transition-colors ${className}`}
+      className={`relative flex flex-col min-h-[550px] sm:min-h-[650px] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#1C1A19] shadow-sm overflow-clip transition-colors ${className}`}
     >
       {/* Top Snippet & Formatting Toolbar */}
       <div className="sticky top-16 z-20 flex flex-wrap items-center justify-between gap-2 border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/95 dark:bg-[#22201E]/95 backdrop-blur-xs px-3 py-2 select-none shrink-0">
