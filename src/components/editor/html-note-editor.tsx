@@ -19,20 +19,28 @@ import {
   Check,
   RotateCcw,
   AlertTriangle,
+  BookOpen,
+  UserRound,
+  FlaskConical,
 } from "lucide-react";
 import { findUnbundledFonts } from "@/lib/layout/font-check";
+import { contributionSnippet, type Contributor } from "@/lib/editor/contribution-snippets";
 
 interface HtmlNoteEditorProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  /** Signed-in user, recorded on inserted contribution sections. */
+  contributor?: Contributor | null;
 }
 
 interface Snippet {
   label: string;
   icon?: React.ReactNode;
-  template: string;
+  /** Static template, or `build` for snippets generated per insertion. */
+  template?: string;
+  build?: () => string;
   title: string;
 }
 
@@ -41,6 +49,7 @@ export function HtmlNoteEditor({
   onChange,
   placeholder = "Write lecture notes in HTML...",
   className = "",
+  contributor = null,
 }: HtmlNoteEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
@@ -261,6 +270,29 @@ export function HtmlNoteEditor({
         },
       ],
     },
+    {
+      group: "Contribute",
+      items: [
+        {
+          label: "Case Study",
+          title: "Case Study: context, what happened, findings",
+          icon: <BookOpen className="w-3.5 h-3.5 text-[#5D7063]" />,
+          build: () => contributionSnippet("case-study", contributor),
+        },
+        {
+          label: "My Experience",
+          title: "Your own experience with this topic",
+          icon: <UserRound className="w-3.5 h-3.5 text-[#A85D44]" />,
+          build: () => contributionSnippet("experience", contributor),
+        },
+        {
+          label: "Findings",
+          title: "A list of findings",
+          icon: <FlaskConical className="w-3.5 h-3.5 text-[#2B6CB0]" />,
+          build: () => contributionSnippet("findings", contributor),
+        },
+      ],
+    },
   ];
 
   return (
@@ -277,7 +309,7 @@ export function HtmlNoteEditor({
                 <button
                   key={item.label}
                   type="button"
-                  onClick={() => insertSnippet(item.template)}
+                  onClick={() => insertSnippet(item.build ? item.build() : item.template ?? "")}
                   title={item.title}
                   className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold text-[#757069] dark:text-[#948F86] hover:text-[#2D2926] dark:hover:text-[#E3DFD7] hover:bg-white dark:hover:bg-[#2E2B29] transition-all cursor-pointer shadow-2xs border border-transparent hover:border-[#E8E3D9] dark:hover:border-[#33312E]"
                 >
