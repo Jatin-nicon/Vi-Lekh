@@ -840,6 +840,7 @@ export function NoteReader({
         {/* Document Body (PDF Viewer or Web HTML Viewer) */}
         {viewMode === "pdf" && effectivePdfSource ? (
           <PdfViewer
+            fullscreen={isFullscreen}
             pdfSource={effectivePdfSource}
             activePage={activePage}
             onActivePageChange={setActivePage}
