@@ -3,18 +3,21 @@
  *
  * - "pdf": PDF pages in PDF intrinsic units (unchanged legacy key family).
  * - "html-a4": the paged HTML layout in A4 page units (794 × 1123), design D3.
+ * - "html-page": a complete HTML document shown as one continuous page, in
+ *   document units (1104 wide), design D2a.
  *
  * The pre-pagination free-width HTML keys (`vilekh_annotations_<note>` etc.)
  * are listed in LEGACY_HTML_KEYS. They are never written by the html-a4
  * layout and are kept, not deleted (see task 6.4).
  */
 
-export type AnnotationLayout = "pdf" | "html-a4";
+export type AnnotationLayout = "pdf" | "html-a4" | "html-page";
 export type AnnotationKind = "annotations" | "shapes" | "textboxes";
 
 const PREFIX: Record<AnnotationLayout, string> = {
   pdf: "vilekh_pdf",
   "html-a4": "vilekh_html_a4",
+  "html-page": "vilekh_html_page",
 };
 
 export function annotationStorageKey(
