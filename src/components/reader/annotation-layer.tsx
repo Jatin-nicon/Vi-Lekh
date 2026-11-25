@@ -4,6 +4,12 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import type { AnnotationTool, ShapeType } from "./annotation-toolbar";
 import { COLOR_PALETTE } from "./annotation-toolbar";
 import { Trash2, Check, Move } from "lucide-react";
+import {
+  annotationStorageKey,
+  legacyAnnotationKey,
+  type AnnotationKind,
+  type AnnotationLayout,
+} from "@/lib/annotations/storage-keys";
 
 export interface AnnotationPoint {
   x: number;
@@ -48,6 +54,8 @@ export interface AnnotationTextBox {
 export interface AnnotationLayerProps {
   noteId: string;
   pageNumber?: number;
+  /** Storage key family for per-page annotations. Defaults to "pdf". */
+  layout?: AnnotationLayout;
   scale?: number;
   intrinsicWidth?: number;
   intrinsicHeight?: number;
@@ -381,6 +389,7 @@ export function getAnnotationCursor(tool: AnnotationTool | null, color: string):
 export function AnnotationLayer({
   noteId,
   pageNumber,
+  layout = "pdf",
   scale = 1.0,
   intrinsicWidth,
   intrinsicHeight,
@@ -450,20 +459,16 @@ export function AnnotationLayer({
   const currentScale = scale > 0 ? scale : 1.0;
 
   // 1. LocalStorage Auto-Persistence keyed by note ID and page number
-  const strokesStorageKey =
+  const storageKey = (kind: AnnotationKind) =>
     pageNumber !== undefined
-      ? `vilekh_pdf_annotations_${noteId}_page_${pageNumber}`
-      : `vilekh_annotations_${noteId}`;
-
-  const textStorageKey =
-    pageNumber !== undefined
-      ? `vilekh_pdf_textboxes_${noteId}_page_${pageNumber}`
-      : `vilekh_textboxes_${noteId}`;
-
-  const shapesStorageKey =
-    pageNumber !== undefined
-      ? `vilekh_pdf_shapes_${noteId}_page_${pageNumber}`
-      : `vilekh_shapes_${noteId}`;
+      ? annotationStorageKey(layout, kind, noteId, pageNumber)
+      : legacyAnnotationKey(kind, noteId);
+  const strokesStorageKey = storageKey("annotations");
+  const textStorageKey = storageKey("textboxes");
+  const shapesStorageKey = storageKey("shapes");
+  // Only the PDF layout falls back to the old single-layer keys on page 1.
+  // html-a4 coordinates are page units, so old free-width marks are not shown.
+  const useLegacyFallback = layout === "pdf" && pageNumber === 1;
 
   // Keep latest callback references without triggering effect re-executions
   const onChangeStrokesRef = useRef(onChangeStrokes);
@@ -520,7 +525,7 @@ export function AnnotationLayer({
     try {
       const savedStrokes =
         localStorage.getItem(strokesStorageKey) ||
-        (pageNumber === 1 ? localStorage.getItem(`vilekh_annotations_${noteId}`) : null);
+        (useLegacyFallback ? localStorage.getItem(legacyAnnotationKey("annotations", noteId)) : null);
       if (savedStrokes) {
         const parsed = JSON.parse(savedStrokes);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -534,7 +539,7 @@ export function AnnotationLayer({
     try {
       const savedTextBoxes =
         localStorage.getItem(textStorageKey) ||
-        (pageNumber === 1 ? localStorage.getItem(`vilekh_textboxes_${noteId}`) : null);
+        (useLegacyFallback ? localStorage.getItem(legacyAnnotationKey("textboxes", noteId)) : null);
       if (savedTextBoxes) {
         const parsed = JSON.parse(savedTextBoxes);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -552,7 +557,7 @@ export function AnnotationLayer({
     try {
       const savedShapes =
         localStorage.getItem(shapesStorageKey) ||
-        (pageNumber === 1 ? localStorage.getItem(`vilekh_shapes_${noteId}`) : null);
+        (useLegacyFallback ? localStorage.getItem(legacyAnnotationKey("shapes", noteId)) : null);
       if (savedShapes) {
         const parsed = JSON.parse(savedShapes);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -562,7 +567,7 @@ export function AnnotationLayer({
     } catch {
       // Ignore storage read errors
     }
-  }, [noteId, strokesStorageKey, textStorageKey, shapesStorageKey]);
+  }, [noteId, strokesStorageKey, textStorageKey, shapesStorageKey, useLegacyFallback]);
 
   // Save strokes to localStorage
   const updateStrokes = useCallback(
