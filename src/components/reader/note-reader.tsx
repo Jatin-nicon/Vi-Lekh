@@ -47,12 +47,7 @@ export function NoteReader({
   const blocks = revision?.blocks || [];
 
   // Annotation states
-  const [tool, setTool] = useState<AnnotationTool | null>(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 768) {
-      return null;
-    }
-    return "pen";
-  });
+  const [tool, setTool] = useState<AnnotationTool | null>(null);
   const [color, setColor] = useState<string>("#A85D44");
   const [penWidth, setPenWidth] = useState<number>(2.5);
   const [shapeWidth, setShapeWidth] = useState<number>(2.0);
