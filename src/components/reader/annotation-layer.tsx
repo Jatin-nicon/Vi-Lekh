@@ -10,6 +10,8 @@ import {
   type AnnotationKind,
   type AnnotationLayout,
 } from "@/lib/annotations/storage-keys";
+import { loadTextStyle, type TextBoxFont } from "@/lib/annotations/text-style";
+import { NOTE_HAND, ensureNoteFonts } from "@/lib/layout/note-fonts";
 
 export interface AnnotationPoint {
   x: number;
@@ -49,6 +51,8 @@ export interface AnnotationTextBox {
   bold?: boolean;
   italic?: boolean;
   hasBorder?: boolean;
+  /** Typeface. Boxes saved before this existed have none and stay sans. */
+  font?: TextBoxFont;
 }
 
 export interface AnnotationLayerProps {
@@ -1365,8 +1369,7 @@ export function AnnotationLayer({
       y: boundedY,
       width: defaultWidth,
       text: "",
-      color,
-      fontSize: 14,
+      ...loadTextStyle(),
       bold: false,
       italic: false,
       hasBorder: false,
@@ -1594,6 +1597,8 @@ export function AnnotationLayer({
   );
 }
 
+const HAND_STACK = `${NOTE_HAND}, cursive`;
+
 interface WordDocsTextBoxItemProps {
   box: AnnotationTextBox;
   scale: number;
@@ -1618,6 +1623,13 @@ function WordDocsTextBoxItem({
   onDelete,
 }: WordDocsTextBoxItemProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isHand = box.font === "hand";
+
+  // Handwriting uses the bundled note font.
+  useEffect(() => {
+    if (isHand) ensureNoteFonts();
+  }, [isHand]);
+
   const dragRef = useRef<{ startX: number; startY: number; boxX: number; boxY: number } | null>(
     null
   );
@@ -1643,7 +1655,7 @@ function WordDocsTextBoxItem({
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${Math.max(36 * scale, textareaRef.current.scrollHeight)}px`;
     }
-  }, [box.text, isSelected, box.width, scale]);
+  }, [box.text, isSelected, box.width, scale, box.font, box.fontSize, box.bold]);
 
   // 1. Move/Drag interaction via the bounding frame
   const handleFrameDragStart = (e: React.PointerEvent) => {
@@ -1890,6 +1902,7 @@ function WordDocsTextBoxItem({
               fontSize: `${Math.max(12, (box.fontSize || 14) * scale)}px`,
               fontWeight: box.bold ? "bold" : "normal",
               fontStyle: box.italic ? "italic" : "normal",
+              ...(isHand ? { fontFamily: HAND_STACK, lineHeight: 1.35 } : null),
             }}
             rows={2}
           />
@@ -1910,6 +1923,7 @@ function WordDocsTextBoxItem({
               fontSize: `${Math.max(12, (box.fontSize || 14) * scale)}px`,
               fontWeight: box.bold ? "bold" : "normal",
               fontStyle: box.italic ? "italic" : "normal",
+              ...(isHand ? { fontFamily: HAND_STACK, lineHeight: 1.35 } : null),
             }}
           >
             {box.text}
