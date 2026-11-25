@@ -36,6 +36,11 @@ function EditContent() {
   const noteId = searchParams.get("note");
 
   const { user, profile, isLoading: authLoading } = useAuth();
+  // Recorded on Case Study / My Experience / Findings sections the user inserts.
+  const contributor = useMemo(
+    () => (profile ? { id: profile.id, name: profile.display_name } : null),
+    [profile]
+  );
   const [note, setNote] = useState<Note | null>(null);
   const [noteTitle, setNoteTitle] = useState("");
   const [courseRole, setCourseRole] = useState<CourseRole>("viewer");
@@ -307,14 +312,14 @@ function EditContent() {
         {/* Dynamic View Modes: Editor | Split | Reader Preview */}
         {editorViewMode === "split" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            <HtmlNoteEditor value={html} onChange={setHtml} />
+            <HtmlNoteEditor value={html} onChange={setHtml} contributor={contributor} />
             <LivePreview html={html} noteTitle={noteTitle || note.title} />
           </div>
         )}
 
         {editorViewMode === "editor" && (
           <div className="max-w-4xl mx-auto">
-            <HtmlNoteEditor value={html} onChange={setHtml} />
+            <HtmlNoteEditor value={html} onChange={setHtml} contributor={contributor} />
           </div>
         )}
 

@@ -18,19 +18,33 @@ import {
   Copy,
   Check,
   RotateCcw,
+  AlertTriangle,
+  BookOpen,
+  UserRound,
+  FlaskConical,
+  ImagePlus,
+  Loader2,
+  X,
 } from "lucide-react";
+import { findUnbundledFonts } from "@/lib/layout/font-check";
+import { contributionSnippet, imageSnippet, type Contributor } from "@/lib/editor/contribution-snippets";
+import { uploadImage } from "@/lib/services/image-upload";
 
 interface HtmlNoteEditorProps {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   className?: string;
+  /** Signed-in user, recorded on inserted contribution sections. */
+  contributor?: Contributor | null;
 }
 
 interface Snippet {
   label: string;
   icon?: React.ReactNode;
-  template: string;
+  /** Static template, or `build` for snippets generated per insertion. */
+  template?: string;
+  build?: () => string;
   title: string;
 }
 
@@ -39,10 +53,14 @@ export function HtmlNoteEditor({
   onChange,
   placeholder = "Write lecture notes in HTML...",
   className = "",
+  contributor = null,
 }: HtmlNoteEditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [copied, setCopied] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const [isAddingImage, setIsAddingImage] = useState(false);
 
   // Synchronize gutter scroll with textarea
   const handleScroll = () => {
@@ -64,6 +82,9 @@ export function HtmlNoteEditor({
       chars: value.length,
     };
   }, [value, lines.length]);
+
+  // Fonts that are not bundled lay out differently per device (design D2).
+  const unbundledFonts = useMemo(() => findUnbundledFonts(value), [value]);
 
   // Handle Tab key (2 spaces) and Enter key (auto-indent)
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -137,6 +158,27 @@ export function HtmlNoteEditor({
     },
     [value, onChange]
   );
+
+  // Image action: optimize the chosen file in the browser and embed it at the cursor.
+  const handleImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow choosing the same file again
+    if (!file) return;
+    setImageError(null);
+    if (!file.type.startsWith("image/")) {
+      setImageError(`“${file.name}” is not an image. Choose a JPEG, PNG, WebP, GIF or SVG file.`);
+      return;
+    }
+    try {
+      setIsAddingImage(true);
+      const src = await uploadImage(file);
+      insertSnippet(imageSnippet(src, file.name));
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : "The image could not be added.");
+    } finally {
+      setIsAddingImage(false);
+    }
+  };
 
   const handleCopy = () => {
     if (!value) return;
@@ -256,11 +298,34 @@ export function HtmlNoteEditor({
         },
       ],
     },
+    {
+      group: "Contribute",
+      items: [
+        {
+          label: "Case Study",
+          title: "Case Study: context, what happened, findings",
+          icon: <BookOpen className="w-3.5 h-3.5 text-[#5D7063]" />,
+          build: () => contributionSnippet("case-study", contributor),
+        },
+        {
+          label: "My Experience",
+          title: "Your own experience with this topic",
+          icon: <UserRound className="w-3.5 h-3.5 text-[#A85D44]" />,
+          build: () => contributionSnippet("experience", contributor),
+        },
+        {
+          label: "Findings",
+          title: "A list of findings",
+          icon: <FlaskConical className="w-3.5 h-3.5 text-[#2B6CB0]" />,
+          build: () => contributionSnippet("findings", contributor),
+        },
+      ],
+    },
   ];
 
   return (
     <div
-      className={`relative flex flex-col min-h-[550px] sm:min-h-[650px] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#1C1A19] shadow-sm overflow-hidden transition-colors ${className}`}
+      className={`relative flex flex-col min-h-[550px] sm:min-h-[650px] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#1C1A19] shadow-sm overflow-clip transition-colors ${className}`}
     >
       {/* Top Snippet & Formatting Toolbar */}
       <div className="sticky top-16 z-20 flex flex-wrap items-center justify-between gap-2 border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/95 dark:bg-[#22201E]/95 backdrop-blur-xs px-3 py-2 select-none shrink-0">
@@ -272,7 +337,7 @@ export function HtmlNoteEditor({
                 <button
                   key={item.label}
                   type="button"
-                  onClick={() => insertSnippet(item.template)}
+                  onClick={() => insertSnippet(item.build ? item.build() : item.template ?? "")}
                   title={item.title}
                   className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold text-[#757069] dark:text-[#948F86] hover:text-[#2D2926] dark:hover:text-[#E3DFD7] hover:bg-white dark:hover:bg-[#2E2B29] transition-all cursor-pointer shadow-2xs border border-transparent hover:border-[#E8E3D9] dark:hover:border-[#33312E]"
                 >
@@ -282,6 +347,28 @@ export function HtmlNoteEditor({
               ))}
             </div>
           ))}
+          <button
+            type="button"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={isAddingImage}
+            title="Insert an image from a file"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold text-[#757069] dark:text-[#948F86] hover:text-[#2D2926] dark:hover:text-[#E3DFD7] hover:bg-white dark:hover:bg-[#2E2B29] transition-all cursor-pointer shadow-2xs border border-transparent hover:border-[#E8E3D9] dark:hover:border-[#33312E] disabled:opacity-60 disabled:cursor-wait"
+          >
+            {isAddingImage ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <ImagePlus className="w-3.5 h-3.5 text-[#5D7063]" />
+            )}
+            <span>Image</span>
+          </button>
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleImageFile}
+            aria-label="Choose an image to insert"
+          />
         </div>
 
         <div className="flex items-center gap-2">
@@ -296,6 +383,45 @@ export function HtmlNoteEditor({
           </button>
         </div>
       </div>
+
+      {imageError && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 border-b border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 px-4 py-2 text-xs text-red-800 dark:text-red-300"
+        >
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+          <span className="flex-1">{imageError}</span>
+          <button
+            type="button"
+            onClick={() => setImageError(null)}
+            className="shrink-0 cursor-pointer opacity-70 hover:opacity-100"
+            aria-label="Dismiss"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {unbundledFonts.length > 0 && (
+        <div
+          role="status"
+          className="flex items-start gap-2 border-b border-amber-200 dark:border-amber-900/50 bg-amber-50 dark:bg-amber-950/30 px-4 py-2 text-xs text-amber-800 dark:text-amber-300"
+        >
+          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>
+            {unbundledFonts.length === 1 ? "The font " : "The fonts "}
+            {unbundledFonts.map((f, i) => (
+              <React.Fragment key={f}>
+                {i > 0 && ", "}
+                <code className="font-mono font-semibold">{f}</code>
+              </React.Fragment>
+            ))}{" "}
+            {unbundledFonts.length === 1 ? "isn’t" : "aren’t"} bundled, so line breaks can differ between
+            devices and readers’ annotations may not line up. Remove the <code className="font-mono">font-family</code>{" "}
+            to use the default note fonts.
+          </span>
+        </div>
+      )}
 
       {/* Editor Body with Synchronized Line Gutter */}
       <div className="relative flex-1 flex min-h-[460px] bg-[#FAF8F5] dark:bg-[#181615] overflow-hidden">

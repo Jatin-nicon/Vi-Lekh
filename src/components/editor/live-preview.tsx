@@ -31,14 +31,15 @@ export function LivePreview({ html }: LivePreviewProps) {
       </div>
 
       {/* Scrollable Preview Canvas */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-8 leading-relaxed text-[#2D2926] dark:text-[#E3DFD7]">
+      <div className="flex-1 overflow-y-auto p-2 sm:p-4 bg-[#EFEBE3] dark:bg-[#161514] leading-relaxed text-[#2D2926] dark:text-[#E3DFD7]">
         {isEmpty ? (
           <div className="py-20 text-center text-xs text-[#757069] dark:text-[#948F86] italic">
             Start typing in the HTML editor to see live reader preview here...
           </div>
         ) : (
           <div className="w-full">
-            <HtmlSandboxedViewer html={renderedHtml} />
+            {/* Same fixed A4 pages as the reader, so the preview matches print */}
+            <HtmlSandboxedViewer html={renderedHtml} paged />
           </div>
         )}
       </div>

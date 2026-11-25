@@ -1,6 +1,11 @@
 import { notesStore, INITIAL_PROFILES } from "../src/lib/data/notes-store";
-import { computeBlockDiff } from "../src/lib/diff/block-diff";
+import { JSDOM } from "jsdom";
+import { diffSegments } from "../src/lib/diff/html-diff";
+import { blocksToHtml } from "../src/lib/editor/block-converter";
 import type { NoteBlock } from "../src/lib/supabase/types";
+
+// The HTML diff parses with DOMParser; provide one outside the browser.
+globalThis.DOMParser = new JSDOM().window.DOMParser;
 
 function runVerification() {
   console.log("=== Running Vi-Lekh End-to-End Lifecycle Verification ===");
@@ -56,11 +61,11 @@ function runVerification() {
   }
 
   // 3. Test Block Diff Computation
-  console.log("3. Computing block-level diff...");
+  console.log("3. Computing section-level HTML diff...");
   const baseRev = notesStore.getRevision("rev_v1")!;
-  const diffs = computeBlockDiff(baseRev.blocks, proposedBlocks);
+  const diffs = diffSegments(blocksToHtml(baseRev.blocks), blocksToHtml(proposedBlocks));
   const additions = diffs.filter((d) => d.type === "added");
-  const modifications = diffs.filter((d) => d.type === "modified");
+  const modifications = diffs.filter((d) => d.type === "changed");
   const deletions = diffs.filter((d) => d.type === "removed");
 
   console.log(`   -> Diff result: ${additions.length} additions, ${modifications.length} modifications, ${deletions.length} deletions`);

@@ -1,11 +1,54 @@
 "use client";
 
-import React, { useRef, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from "react";
+import {
+  NOTE_BODY_STACK,
+  NOTE_HEADING_STACK,
+  NOTE_MONO_STACK,
+  ensureNoteFonts,
+  loadNoteFonts,
+} from "@/lib/layout/note-fonts";
+import { DOCUMENT_WIDTH, isHtmlDocument, prepareDocument } from "@/lib/layout/document-html";
+import { bindFormFields } from "@/lib/layout/form-fields";
+import {
+  PAGE_GAP,
+  PAGE_HEIGHT,
+  PAGE_MARGIN,
+  PAGE_PITCH,
+  PAGE_WIDTH,
+  paginate,
+} from "@/lib/layout/paginate";
+
+export interface PagedLayoutInfo {
+  pageCount: number;
+  /** Screen pixels per page unit: fit-to-width × zoom. */
+  scale: number;
+  /** Size of each page in page units. A complete document is one tall page. */
+  pageWidth: number;
+  pageHeight: number;
+}
 
 interface HtmlSandboxedViewerProps {
   html: string;
   className?: string;
   theme?: "light" | "dark";
+  /**
+   * Lay the note out on fixed A4 pages (794 × 1123 page units) scaled to fit
+   * the available width (design D1). Line and page breaks then depend only on
+   * the content, never on the screen size or zoom.
+   */
+  paged?: boolean;
+  /** User zoom multiplier applied on top of fit-to-width (paged mode). */
+  zoom?: number;
+  /** Called after each pagination pass and whenever the scale changes. */
+  onLayout?: (info: PagedLayoutInfo) => void;
+  /**
+   * Renders content over page `pageIndex` (0-based), e.g. an annotation layer.
+   * The overlay box is pageWidth × pageHeight × scale screen pixels.
+   */
+  renderPageOverlay?: (pageIndex: number, info: PagedLayoutInfo) => React.ReactNode;
+  /** Storage key for the note's fill-in fields. Without it they are read-only. */
+  fieldsKey?: string;
 }
 
 const BASE_SANDBOX_CSS = `
@@ -13,7 +56,7 @@ const BASE_SANDBOX_CSS = `
     display: block;
     width: 100%;
     color: var(--foreground, #2D2926);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-family: ${NOTE_BODY_STACK};
     line-height: 1.7;
     -webkit-font-smoothing: antialiased;
   }
@@ -21,11 +64,13 @@ const BASE_SANDBOX_CSS = `
   .sandbox-container {
     width: 100%;
     color: inherit;
+    container-type: inline-size;
   }
 
   /* Default Typography */
   h1, h2, h3, h4, h5, h6 {
     color: inherit;
+    font-family: ${NOTE_HEADING_STACK};
     font-weight: 700;
     line-height: 1.3;
     margin-top: 1.5rem;
@@ -59,14 +104,14 @@ const BASE_SANDBOX_CSS = `
     font-style: italic;
   }
   code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: ${NOTE_MONO_STACK};
     font-size: 0.9em;
     background-color: rgba(120, 110, 100, 0.08);
     padding: 0.15em 0.35em;
     border-radius: 4px;
   }
   pre {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-family: ${NOTE_MONO_STACK};
     background-color: #21201E;
     color: #FAF8F5;
     padding: 1rem 1.25rem;
@@ -204,7 +249,7 @@ const BASE_SANDBOX_CSS = `
     flex-direction: column;
     gap: 0.75rem;
   }
-  @media (min-width: 640px) {
+  @container (min-width: 640px) {
     .flow-steps {
       flex-direction: row;
       flex-wrap: wrap;
@@ -268,7 +313,66 @@ const BASE_SANDBOX_CSS = `
     height: 1.25rem;
   }
 
+  /* Contribution sections (Case Study, My Experience, Findings) */
+  .vl-contribution {
+    margin: 1.75rem 0;
+    padding: 1.1rem 1.25rem 0.9rem;
+    border-radius: 0.875rem;
+    border: 1px solid #E8E3D9;
+    border-left: 4px solid #5D7063;
+    background-color: #FAF8F5;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .vl-contribution.vl-experience { border-left-color: #A85D44; }
+  .vl-contribution.vl-findings { border-left-color: #2B6CB0; }
+  .vl-contribution > h3:first-child,
+  .vl-contribution > h4:first-child {
+    margin-top: 0;
+    margin-bottom: 0.6rem;
+    font-size: 1.05rem;
+  }
+  .vl-contribution p:last-child,
+  .vl-contribution ul:last-child,
+  .vl-contribution ol:last-child {
+    margin-bottom: 0;
+  }
+  .vl-contribution[data-contributor-name]:not([data-contributor-name=""])::after {
+    content: "Contributed by " attr(data-contributor-name);
+    display: block;
+    margin-top: 0.75rem;
+    font-family: ${NOTE_HEADING_STACK};
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #757069;
+  }
+
+  /* Figures inserted with the Image action */
+  .vl-figure {
+    margin: 1.5rem 0;
+    text-align: center;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+  .vl-figure img { display: inline-block; }
+  .vl-figure figcaption {
+    margin-top: 0.4rem;
+    font-size: 0.85rem;
+    color: #757069;
+  }
+
   /* Dark mode overrides */
+  .dark .vl-contribution {
+    border-color: #33312E;
+    background-color: #1E1C1B;
+  }
+  .dark .vl-contribution { border-left-color: #768D7D; }
+  .dark .vl-contribution.vl-experience { border-left-color: #C4785E; }
+  .dark .vl-contribution.vl-findings { border-left-color: #63B3ED; }
+  .dark .vl-contribution::after,
+  .dark .vl-figure figcaption { color: #948F86; }
   .dark {
     color: #E3DFD7;
   }
@@ -331,7 +435,7 @@ const BASE_SANDBOX_CSS = `
       break-after: avoid;
       page-break-after: avoid;
     }
-    .callout, .pinned-note, .concept-card, .process-flow, .your-note, .katex-display {
+    .callout, .pinned-note, .concept-card, .process-flow, .your-note, .katex-display, .vl-contribution, .vl-figure {
       break-inside: avoid;
       page-break-inside: avoid;
       box-shadow: none !important;
@@ -339,17 +443,115 @@ const BASE_SANDBOX_CSS = `
   }
 `;
 
+/** `rem` follows the browser's root font size; paged mode pins it to 16px. */
+const SANDBOX_CSS = BASE_SANDBOX_CSS.replace(/(\d*\.?\d+)rem\b/g, "calc($1 * var(--vl-rem, 1rem))");
+
+const PAGED_CSS = `
+  :host { display: block; }
+  .vl-pages {
+    position: relative;
+    width: ${PAGE_WIDTH}px;
+  }
+  .vl-sheet {
+    position: absolute;
+    left: 0;
+    width: ${PAGE_WIDTH}px;
+    height: ${PAGE_HEIGHT}px;
+    background: #FFFFFF;
+    border: 1px solid #E8E3D9;
+    box-sizing: border-box;
+    box-shadow: 0 1px 3px rgba(45, 41, 38, 0.08);
+  }
+  .vl-pages.dark .vl-sheet {
+    background: #1E1D1B;
+    border-color: #33312E;
+  }
+  .vl-flow {
+    --vl-rem: 16px;
+    position: relative;
+    box-sizing: border-box;
+    width: var(--vl-w, ${PAGE_WIDTH}px);
+    padding: var(--vl-pt, ${PAGE_MARGIN}px) var(--vl-pr, ${PAGE_MARGIN}px) var(--vl-pb, ${PAGE_MARGIN}px) var(--vl-pl, ${PAGE_MARGIN}px);
+    font-size: 16px;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    overflow-wrap: break-word;
+  }
+  .vl-flow > :first-child { margin-top: 0; }
+  /* Page geometry must not change in print, or breaks would move (design D4). */
+  @media print {
+    .vl-flow.sandbox-container {
+      width: var(--vl-w, ${PAGE_WIDTH}px) !important;
+      max-width: none !important;
+      margin: 0 !important;
+      padding: var(--vl-pt, ${PAGE_MARGIN}px) var(--vl-pr, ${PAGE_MARGIN}px) var(--vl-pb, ${PAGE_MARGIN}px) var(--vl-pl, ${PAGE_MARGIN}px) !important;
+    }
+  }
+`;
+
+const KATEX_CSS_URL = "https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css";
+
+function isDarkTheme(theme?: "light" | "dark") {
+  return (
+    theme === "dark" ||
+    (!theme && typeof document !== "undefined" && document.documentElement.classList.contains("dark"))
+  );
+}
+
 export function HtmlSandboxedViewer({
   html,
   className = "",
   theme,
+  paged = false,
+  zoom = 1,
+  onLayout,
+  renderPageOverlay,
+  fieldsKey,
 }: HtmlSandboxedViewerProps) {
+  const outerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const shadowRootRef = useRef<ShadowRoot | null>(null);
-  const [isClient, setIsClient] = useState(false);
+  const [pageCount, setPageCount] = useState(1);
+  const [fitWidth, setFitWidth] = useState(0);
+  // Complete HTML documents are one continuous page at their own width.
+  const isDocument = useMemo(() => isHtmlDocument(html || ""), [html]);
+  const [documentHeight, setDocumentHeight] = useState(PAGE_HEIGHT);
+  const pageWidth = isDocument ? DOCUMENT_WIDTH : PAGE_WIDTH;
+  const pageHeight = isDocument ? documentHeight : PAGE_HEIGHT;
+
+  // Track the available width (paged mode). Resizing only changes the scale;
+  // it never triggers pagination, so breaks don't move.
+  useLayoutEffect(() => {
+    if (!paged || !outerRef.current) return;
+    const el = outerRef.current;
+    const update = () => setFitWidth(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [paged]);
+
+  const fit = fitWidth > 0 ? Math.min(1, fitWidth / pageWidth) : 1;
+  const scale = paged ? fit * (zoom > 0 ? zoom : 1) : 1;
+
+  const onLayoutRef = useRef(onLayout);
+  useEffect(() => {
+    onLayoutRef.current = onLayout;
+  }, [onLayout]);
 
   useEffect(() => {
-    setIsClient(true);
+    if (paged) onLayoutRef.current?.({ pageCount, scale, pageWidth, pageHeight });
+  }, [paged, pageCount, scale, pageWidth, pageHeight]);
+
+  const renderSheets = useCallback((shadow: ShadowRoot, count: number) => {
+    const sheets = shadow.querySelector(".vl-sheets");
+    const pages = shadow.querySelector<HTMLElement>(".vl-pages");
+    if (!sheets || !pages) return;
+    sheets.innerHTML = Array.from(
+      { length: count },
+      (_, i) => `<div class="vl-sheet" data-page="${i + 1}" style="top:${i * PAGE_PITCH}px"></div>`,
+    ).join("");
+    pages.style.height = `${count * PAGE_PITCH - PAGE_GAP}px`;
   }, []);
 
   useEffect(() => {
@@ -364,32 +566,116 @@ export function HtmlSandboxedViewer({
 
     const shadow = shadowRootRef.current;
     if (!shadow) return;
+    ensureNoteFonts();
 
-    // Determine active theme
-    const isDark =
-      theme === "dark" ||
-      (!theme &&
-        typeof document !== "undefined" &&
-        document.documentElement.classList.contains("dark"));
+    // Complete HTML documents are adapted for display only; the stored HTML is untouched.
+    const content = isDocument ? prepareDocument(html) : html || "";
+    const isDark = !isDocument && isDarkTheme(theme);
+    const katexLink = `<link rel="stylesheet" href="${KATEX_CSS_URL}" />`;
 
-    // Prepare KaTeX and Fonts inside Shadow DOM
-    const katexLink = `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css" />`;
-    const styleBlock = `<style>${BASE_SANDBOX_CSS}</style>`;
+    if (!paged) {
+      shadow.innerHTML = `
+        ${katexLink}
+        <style>${SANDBOX_CSS}</style>
+        <div class="sandbox-container ${isDark ? "dark" : ""}">
+          ${content}
+        </div>
+      `;
+      return;
+    }
 
     shadow.innerHTML = `
       ${katexLink}
-      ${styleBlock}
-      <div class="sandbox-container ${isDark ? "dark" : ""}">
-        ${html || ""}
+      <style>${SANDBOX_CSS}${PAGED_CSS}</style>
+      <div class="vl-pages ${isDark ? "dark" : ""}"${isDocument ? " data-document" : ""}>
+        <div class="vl-sheets"></div>
+        <div class="vl-flow sandbox-container ${isDark ? "dark" : ""}">${content}</div>
       </div>
     `;
-  }, [html, theme, isClient]);
+
+    const flow = shadow.querySelector<HTMLElement>(".vl-flow")!;
+    const unbindFields = bindFormFields(flow, fieldsKey);
+    let cancelled = false;
+    let frame = 0;
+    const run = () => {
+      if (cancelled) return;
+      if (isDocument) {
+        setDocumentHeight(flow.offsetHeight);
+        setPageCount(1);
+        return;
+      }
+      const { pageCount: count } = paginate(flow);
+      renderSheets(shadow, count);
+      setPageCount(count);
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(run);
+    };
+
+    // Re-run after fonts, images and the KaTeX stylesheet load — never on resize.
+    run();
+    loadNoteFonts().then(schedule);
+    const link = shadow.querySelector("link");
+    link?.addEventListener("load", schedule);
+    const images = Array.from(flow.querySelectorAll("img"));
+    images.forEach((img) => {
+      if (!img.complete) img.addEventListener("load", schedule);
+    });
+
+    return () => {
+      cancelled = true;
+      unbindFields();
+      cancelAnimationFrame(frame);
+      link?.removeEventListener("load", schedule);
+      images.forEach((img) => img.removeEventListener("load", schedule));
+    };
+  }, [html, theme, paged, renderSheets, fieldsKey, isDocument]);
+
+  if (!paged) {
+    return (
+      <div
+        ref={containerRef}
+        className={`html-sandboxed-viewer-host w-full ${className}`}
+      />
+    );
+  }
+
+  const stackHeight = isDocument ? documentHeight : pageCount * PAGE_PITCH - PAGE_GAP;
+  const info: PagedLayoutInfo = { pageCount, scale, pageWidth, pageHeight };
 
   return (
-    <div
-      ref={containerRef}
-      className={`html-sandboxed-viewer-host w-full ${className}`}
-    />
+    <div ref={outerRef} className={`html-paged-viewer w-full overflow-x-auto ${className}`}>
+      <div
+        className="relative mx-auto"
+        style={{ width: pageWidth * scale, height: stackHeight * scale }}
+      >
+        <div
+          ref={containerRef}
+          className="html-sandboxed-viewer-host absolute left-0 top-0"
+          style={{
+            width: pageWidth,
+            height: stackHeight,
+            transform: `scale(${scale})`,
+            transformOrigin: "top left",
+          }}
+        />
+        {renderPageOverlay &&
+          Array.from({ length: pageCount }, (_, i) => (
+            <div
+              key={i}
+              className="vl-page-overlay pointer-events-none absolute left-0"
+              data-page={i + 1}
+              style={{
+                top: i * PAGE_PITCH * scale,
+                width: pageWidth * scale,
+                height: pageHeight * scale,
+              }}
+            >
+              {renderPageOverlay(i, info)}
+            </div>
+          ))}
+      </div>
+    </div>
   );
 }
-
