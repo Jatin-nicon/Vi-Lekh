@@ -9,6 +9,7 @@ import {
   loadNoteFonts,
 } from "@/lib/layout/note-fonts";
 import { DOCUMENT_WIDTH, isHtmlDocument, prepareDocument } from "@/lib/layout/document-html";
+import { bindFormFields } from "@/lib/layout/form-fields";
 import {
   PAGE_GAP,
   PAGE_HEIGHT,
@@ -46,6 +47,8 @@ interface HtmlSandboxedViewerProps {
    * The overlay box is pageWidth × pageHeight × scale screen pixels.
    */
   renderPageOverlay?: (pageIndex: number, info: PagedLayoutInfo) => React.ReactNode;
+  /** Storage key for the note's fill-in fields. Without it they are read-only. */
+  fieldsKey?: string;
 }
 
 const BASE_SANDBOX_CSS = `
@@ -503,6 +506,7 @@ export function HtmlSandboxedViewer({
   zoom = 1,
   onLayout,
   renderPageOverlay,
+  fieldsKey,
 }: HtmlSandboxedViewerProps) {
   const outerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -590,6 +594,7 @@ export function HtmlSandboxedViewer({
     `;
 
     const flow = shadow.querySelector<HTMLElement>(".vl-flow")!;
+    const unbindFields = bindFormFields(flow, fieldsKey);
     let cancelled = false;
     let frame = 0;
     const run = () => {
@@ -620,11 +625,12 @@ export function HtmlSandboxedViewer({
 
     return () => {
       cancelled = true;
+      unbindFields();
       cancelAnimationFrame(frame);
       link?.removeEventListener("load", schedule);
       images.forEach((img) => img.removeEventListener("load", schedule));
     };
-  }, [html, theme, paged, renderSheets, isDocument]);
+  }, [html, theme, paged, renderSheets, fieldsKey, isDocument]);
 
   if (!paged) {
     return (
@@ -658,7 +664,7 @@ export function HtmlSandboxedViewer({
           Array.from({ length: pageCount }, (_, i) => (
             <div
               key={i}
-              className="vl-page-overlay absolute left-0"
+              className="vl-page-overlay pointer-events-none absolute left-0"
               data-page={i + 1}
               style={{
                 top: i * PAGE_PITCH * scale,
