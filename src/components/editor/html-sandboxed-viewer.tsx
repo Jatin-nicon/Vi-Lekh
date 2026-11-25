@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo } from "react";
 import {
   NOTE_BODY_STACK,
   NOTE_HEADING_STACK,
@@ -8,6 +8,7 @@ import {
   ensureNoteFonts,
   loadNoteFonts,
 } from "@/lib/layout/note-fonts";
+import { DOCUMENT_WIDTH, isHtmlDocument, prepareDocument } from "@/lib/layout/document-html";
 import {
   PAGE_GAP,
   PAGE_HEIGHT,
@@ -21,6 +22,9 @@ export interface PagedLayoutInfo {
   pageCount: number;
   /** Screen pixels per page unit: fit-to-width × zoom. */
   scale: number;
+  /** Size of each page in page units. A complete document is one tall page. */
+  pageWidth: number;
+  pageHeight: number;
 }
 
 interface HtmlSandboxedViewerProps {
@@ -39,7 +43,7 @@ interface HtmlSandboxedViewerProps {
   onLayout?: (info: PagedLayoutInfo) => void;
   /**
    * Renders content over page `pageIndex` (0-based), e.g. an annotation layer.
-   * The overlay box is PAGE_WIDTH × PAGE_HEIGHT × scale screen pixels.
+   * The overlay box is pageWidth × pageHeight × scale screen pixels.
    */
   renderPageOverlay?: (pageIndex: number, info: PagedLayoutInfo) => React.ReactNode;
 }
@@ -463,8 +467,8 @@ const PAGED_CSS = `
     --vl-rem: 16px;
     position: relative;
     box-sizing: border-box;
-    width: ${PAGE_WIDTH}px;
-    padding: ${PAGE_MARGIN}px ${PAGE_MARGIN}px ${PAGE_MARGIN}px ${PAGE_MARGIN}px;
+    width: var(--vl-w, ${PAGE_WIDTH}px);
+    padding: var(--vl-pt, ${PAGE_MARGIN}px) var(--vl-pr, ${PAGE_MARGIN}px) var(--vl-pb, ${PAGE_MARGIN}px) var(--vl-pl, ${PAGE_MARGIN}px);
     font-size: 16px;
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
@@ -474,10 +478,10 @@ const PAGED_CSS = `
   /* Page geometry must not change in print, or breaks would move (design D4). */
   @media print {
     .vl-flow.sandbox-container {
-      width: ${PAGE_WIDTH}px !important;
+      width: var(--vl-w, ${PAGE_WIDTH}px) !important;
       max-width: none !important;
       margin: 0 !important;
-      padding: ${PAGE_MARGIN}px ${PAGE_MARGIN}px ${PAGE_MARGIN}px ${PAGE_MARGIN}px !important;
+      padding: var(--vl-pt, ${PAGE_MARGIN}px) var(--vl-pr, ${PAGE_MARGIN}px) var(--vl-pb, ${PAGE_MARGIN}px) var(--vl-pl, ${PAGE_MARGIN}px) !important;
     }
   }
 `;
@@ -505,6 +509,11 @@ export function HtmlSandboxedViewer({
   const shadowRootRef = useRef<ShadowRoot | null>(null);
   const [pageCount, setPageCount] = useState(1);
   const [fitWidth, setFitWidth] = useState(0);
+  // Complete HTML documents are one continuous page at their own width.
+  const isDocument = useMemo(() => isHtmlDocument(html || ""), [html]);
+  const [documentHeight, setDocumentHeight] = useState(PAGE_HEIGHT);
+  const pageWidth = isDocument ? DOCUMENT_WIDTH : PAGE_WIDTH;
+  const pageHeight = isDocument ? documentHeight : PAGE_HEIGHT;
 
   // Track the available width (paged mode). Resizing only changes the scale;
   // it never triggers pagination, so breaks don't move.
@@ -518,7 +527,7 @@ export function HtmlSandboxedViewer({
     return () => ro.disconnect();
   }, [paged]);
 
-  const fit = fitWidth > 0 ? Math.min(1, fitWidth / PAGE_WIDTH) : 1;
+  const fit = fitWidth > 0 ? Math.min(1, fitWidth / pageWidth) : 1;
   const scale = paged ? fit * (zoom > 0 ? zoom : 1) : 1;
 
   const onLayoutRef = useRef(onLayout);
@@ -527,8 +536,8 @@ export function HtmlSandboxedViewer({
   }, [onLayout]);
 
   useEffect(() => {
-    if (paged) onLayoutRef.current?.({ pageCount, scale });
-  }, [paged, pageCount, scale]);
+    if (paged) onLayoutRef.current?.({ pageCount, scale, pageWidth, pageHeight });
+  }, [paged, pageCount, scale, pageWidth, pageHeight]);
 
   const renderSheets = useCallback((shadow: ShadowRoot, count: number) => {
     const sheets = shadow.querySelector(".vl-sheets");
@@ -555,7 +564,9 @@ export function HtmlSandboxedViewer({
     if (!shadow) return;
     ensureNoteFonts();
 
-    const isDark = isDarkTheme(theme);
+    // Complete HTML documents are adapted for display only; the stored HTML is untouched.
+    const content = isDocument ? prepareDocument(html) : html || "";
+    const isDark = !isDocument && isDarkTheme(theme);
     const katexLink = `<link rel="stylesheet" href="${KATEX_CSS_URL}" />`;
 
     if (!paged) {
@@ -563,7 +574,7 @@ export function HtmlSandboxedViewer({
         ${katexLink}
         <style>${SANDBOX_CSS}</style>
         <div class="sandbox-container ${isDark ? "dark" : ""}">
-          ${html || ""}
+          ${content}
         </div>
       `;
       return;
@@ -572,9 +583,9 @@ export function HtmlSandboxedViewer({
     shadow.innerHTML = `
       ${katexLink}
       <style>${SANDBOX_CSS}${PAGED_CSS}</style>
-      <div class="vl-pages ${isDark ? "dark" : ""}">
+      <div class="vl-pages ${isDark ? "dark" : ""}"${isDocument ? " data-document" : ""}>
         <div class="vl-sheets"></div>
-        <div class="vl-flow sandbox-container ${isDark ? "dark" : ""}">${html || ""}</div>
+        <div class="vl-flow sandbox-container ${isDark ? "dark" : ""}">${content}</div>
       </div>
     `;
 
@@ -583,6 +594,11 @@ export function HtmlSandboxedViewer({
     let frame = 0;
     const run = () => {
       if (cancelled) return;
+      if (isDocument) {
+        setDocumentHeight(flow.offsetHeight);
+        setPageCount(1);
+        return;
+      }
       const { pageCount: count } = paginate(flow);
       renderSheets(shadow, count);
       setPageCount(count);
@@ -608,7 +624,7 @@ export function HtmlSandboxedViewer({
       link?.removeEventListener("load", schedule);
       images.forEach((img) => img.removeEventListener("load", schedule));
     };
-  }, [html, theme, paged, renderSheets]);
+  }, [html, theme, paged, renderSheets, isDocument]);
 
   if (!paged) {
     return (
@@ -619,20 +635,20 @@ export function HtmlSandboxedViewer({
     );
   }
 
-  const stackHeight = pageCount * PAGE_PITCH - PAGE_GAP;
-  const info: PagedLayoutInfo = { pageCount, scale };
+  const stackHeight = isDocument ? documentHeight : pageCount * PAGE_PITCH - PAGE_GAP;
+  const info: PagedLayoutInfo = { pageCount, scale, pageWidth, pageHeight };
 
   return (
     <div ref={outerRef} className={`html-paged-viewer w-full overflow-x-auto ${className}`}>
       <div
         className="relative mx-auto"
-        style={{ width: PAGE_WIDTH * scale, height: stackHeight * scale }}
+        style={{ width: pageWidth * scale, height: stackHeight * scale }}
       >
         <div
           ref={containerRef}
           className="html-sandboxed-viewer-host absolute left-0 top-0"
           style={{
-            width: PAGE_WIDTH,
+            width: pageWidth,
             height: stackHeight,
             transform: `scale(${scale})`,
             transformOrigin: "top left",
@@ -646,8 +662,8 @@ export function HtmlSandboxedViewer({
               data-page={i + 1}
               style={{
                 top: i * PAGE_PITCH * scale,
-                width: PAGE_WIDTH * scale,
-                height: PAGE_HEIGHT * scale,
+                width: pageWidth * scale,
+                height: pageHeight * scale,
               }}
             >
               {renderPageOverlay(i, info)}
