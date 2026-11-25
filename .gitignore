@@ -34,8 +34,9 @@ yarn-error.log*
 .env*
 !.env.example
 
-# database & migrations (ignored per request)
-/supabase/
+# supabase CLI local state
+/supabase/.temp/
+/supabase/.branches/
 
 # agent & local workflow metadata
 .agents/
