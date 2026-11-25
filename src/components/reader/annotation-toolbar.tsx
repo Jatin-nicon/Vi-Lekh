@@ -56,6 +56,7 @@ export const COLOR_PALETTE: ColorOption[] = [
   { label: "Amber Gold", value: "#D97706", highlighterValue: "rgba(245, 158, 11, 0.45)" },
   { label: "Emerald", value: "#059669", highlighterValue: "rgba(16, 185, 129, 0.35)" },
   { label: "Azure", value: "#2563EB", highlighterValue: "rgba(59, 130, 246, 0.35)" },
+  { label: "Notebook Blue", value: "#1A5FB4", highlighterValue: "rgba(26, 95, 180, 0.35)" },
 ];
 
 export const PEN_STROKE_WIDTHS = [
