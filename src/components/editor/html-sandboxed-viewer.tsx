@@ -10,6 +10,7 @@ import {
 } from "@/lib/layout/note-fonts";
 import { DOCUMENT_WIDTH, isHtmlDocument, prepareDocument } from "@/lib/layout/document-html";
 import { bindFormFields } from "@/lib/layout/form-fields";
+import { bindLinks } from "@/lib/layout/links";
 import {
   PAGE_GAP,
   PAGE_HEIGHT,
@@ -478,6 +479,7 @@ const PAGED_CSS = `
     overflow-wrap: break-word;
   }
   .vl-flow > :first-child { margin-top: 0; }
+  [data-vl-overlay] a:hover { opacity: 0.8; }
   /* Page geometry must not change in print, or breaks would move (design D4). */
   @media print {
     .vl-flow.sandbox-container {
@@ -581,7 +583,8 @@ export function HtmlSandboxedViewer({
           ${content}
         </div>
       `;
-      return;
+      const plain = bindLinks(shadow.querySelector<HTMLElement>(".sandbox-container")!);
+      return plain.cleanup;
     }
 
     shadow.innerHTML = `
@@ -595,6 +598,7 @@ export function HtmlSandboxedViewer({
 
     const flow = shadow.querySelector<HTMLElement>(".vl-flow")!;
     const unbindFields = bindFormFields(flow, fieldsKey);
+    const links = bindLinks(flow);
     let cancelled = false;
     let frame = 0;
     const run = () => {
@@ -602,11 +606,12 @@ export function HtmlSandboxedViewer({
       if (isDocument) {
         setDocumentHeight(flow.offsetHeight);
         setPageCount(1);
-        return;
+      } else {
+        const { pageCount: count } = paginate(flow);
+        renderSheets(shadow, count);
+        setPageCount(count);
       }
-      const { pageCount: count } = paginate(flow);
-      renderSheets(shadow, count);
-      setPageCount(count);
+      links.refresh();
     };
     const schedule = () => {
       cancelAnimationFrame(frame);
@@ -626,6 +631,7 @@ export function HtmlSandboxedViewer({
     return () => {
       cancelled = true;
       unbindFields();
+      links.cleanup();
       cancelAnimationFrame(frame);
       link?.removeEventListener("load", schedule);
       images.forEach((img) => img.removeEventListener("load", schedule));

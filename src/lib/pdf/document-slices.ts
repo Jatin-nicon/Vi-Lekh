@@ -63,7 +63,7 @@ export function measureBoxes(root: HTMLElement): SliceBox[] {
   const boxes: SliceBox[] = [];
   root.querySelectorAll<HTMLElement>("*").forEach((el) => {
     if (el.closest("svg") && el.tagName.toLowerCase() !== "svg") return;
-    if (/^(STYLE|SCRIPT|BR)$/.test(el.tagName)) return;
+    if (/^(STYLE|SCRIPT|BR)$/.test(el.tagName) || el.closest("[data-vl-overlay]")) return;
     const r = el.getBoundingClientRect();
     if (r.height <= 0 || r.width <= 0) return;
     boxes.push({

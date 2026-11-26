@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizePage, pageFingerprint, planMerge, readLocalPages, writeLocalPage } from "./annotation-sync";
+import { contentHash, normalizePage, pageFingerprint, planMerge, readLocalPages, staleRevisions, writeLocalPage } from "./annotation-sync";
 
 const stroke = (id: string) => ({ id, points: [{ x: 1, y: 2 }], color: "#000", width: 2, tool: "pen" }) as never;
 const page = (...ids: string[]) => normalizePage({ strokes: ids.map(stroke) });
@@ -61,5 +61,24 @@ describe("local pages", () => {
     expect(pageFingerprint(pages[12])).toBe(pageFingerprint(page("b")));
     writeLocalPage(s, "html-page", "n1", 12, normalizePage({}));
     expect(Object.keys(readLocalPages(s, "html-page", "n1"))).toEqual(["1"]);
+  });
+});
+
+describe("older versions", () => {
+  it("lists versions, other than the current one, that pages with marks were made on", () => {
+    const meta = {
+      1: { updatedAt: "t", synced: true, revisionId: "r1" },
+      2: { updatedAt: "t", synced: true, revisionId: "r2" },
+      3: { updatedAt: "t", synced: true, revisionId: "r1" },
+      4: { updatedAt: "t", synced: true },
+    };
+    expect(staleRevisions(meta, [1, 2, 4], "r2")).toEqual(["r1"]);
+    expect(staleRevisions(meta, [2], "r2")).toEqual([]);
+    expect(staleRevisions(meta, [1], null)).toEqual([]);
+  });
+
+  it("hashes content stably", () => {
+    expect(contentHash("<p>a</p>")).toBe(contentHash("<p>a</p>"));
+    expect(contentHash("<p>a</p>")).not.toBe(contentHash("<p>b</p>"));
   });
 });

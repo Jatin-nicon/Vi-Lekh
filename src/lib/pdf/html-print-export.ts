@@ -114,7 +114,12 @@ export function printPagedHtml({ viewerHost, overlayRoot, title }: PrintPagedHtm
   const links = Array.from(shadow.querySelectorAll("link[rel=stylesheet]"))
     .map((l) => l.outerHTML)
     .join("");
-  const flowHtml = flow.innerHTML;
+  // Link layers over answer fields are for the screen; the fields print their own text.
+  const copy = doc.createElement("template");
+  copy.innerHTML = flow.innerHTML;
+  copy.content.querySelectorAll("[data-vl-overlay]").forEach((el) => el.remove());
+  copy.content.querySelectorAll<HTMLElement>("input, textarea").forEach((el) => el.style.removeProperty("color"));
+  const flowHtml = copy.innerHTML;
 
   const overlays = new Map<number, Element>();
   overlayRoot?.querySelectorAll(".vl-page-overlay[data-page]").forEach((el) => {

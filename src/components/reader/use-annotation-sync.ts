@@ -11,6 +11,7 @@ import {
   planMerge,
   readLocalPages,
   saveMeta,
+  staleRevisions,
   writeLocalPage,
   type PageAnnotations,
   type RemotePage,
@@ -26,6 +27,9 @@ interface Options {
   noteId: string;
   layout: AnnotationLayout;
   revisionId?: string | null;
+  /** Pages in the current layout and a hash of the note content, stored with each page. */
+  pageCount?: number | null;
+  contentHash?: string | null;
   /** Firebase uid of the signed-in user, or null when signed out. */
   userId: string | null;
   strokes: Record<number, AnnotationStroke[]>;
@@ -40,8 +44,10 @@ interface Options {
  * and merges the account copy into this device when a note opens or the user
  * signs in (design D10).
  */
-export function useAnnotationSync({ noteId, layout, revisionId, userId, strokes, shapes, textBoxes, applyPage }: Options) {
+export function useAnnotationSync({ noteId, layout, revisionId, pageCount, contentHash, userId, strokes, shapes, textBoxes, applyPage }: Options) {
   const [status, setStatus] = useState<SyncStatus>("idle");
+  /** Older versions the reader's annotations were made on. */
+  const [staleRevisionIds, setStaleRevisionIds] = useState<string[]>([]);
   const scope = `${layout}|${noteId}`;
   const scopeRef = useRef(scope);
   /** Fingerprint per page of what is known on this device; null until hydrated. */
@@ -52,11 +58,11 @@ export function useAnnotationSync({ noteId, layout, revisionId, userId, strokes,
   const dirtyRef = useRef(new Set<number>());
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushingRef = useRef(false);
-  const live = useRef({ strokes, shapes, textBoxes, userId, revisionId, applyPage });
+  const live = useRef({ strokes, shapes, textBoxes, userId, revisionId, pageCount, contentHash, applyPage });
   const flushRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
     scopeRef.current = scope;
-    live.current = { strokes, shapes, textBoxes, userId, revisionId, applyPage };
+    live.current = { strokes, shapes, textBoxes, userId, revisionId, pageCount, contentHash, applyPage };
   });
 
   const currentPage = (page: number): PageAnnotations =>
@@ -89,7 +95,9 @@ export function useAnnotationSync({ noteId, layout, revisionId, userId, strokes,
       note_id: startNote,
       layout: startLayout,
       page_number: page,
-      revision_id: live.current.revisionId ?? null,
+      revision_id: metaRef.current[page]?.revisionId ?? live.current.revisionId ?? null,
+      page_count: live.current.pageCount ?? null,
+      content_hash: live.current.contentHash ?? null,
       data: currentPage(page),
       updated_at: metaRef.current[page]?.updatedAt ?? new Date().toISOString(),
     }));
@@ -150,7 +158,7 @@ export function useAnnotationSync({ noteId, layout, revisionId, userId, strokes,
       void (async () => {
         const { data, error } = await createClient()
           .from("annotations")
-          .select("page_number, data, updated_at")
+          .select("page_number, data, updated_at, revision_id")
           .eq("user_id", userId)
           .eq("note_id", noteId)
           .eq("layout", layout);
@@ -162,12 +170,12 @@ export function useAnnotationSync({ noteId, layout, revisionId, userId, strokes,
         }
         const devicePages = readLocalPages(localStorage, layout, noteId);
         const plan = planMerge(devicePages, metaRef.current, (data ?? []) as RemotePage[]);
-        for (const [key, { data: pageData, updatedAt }] of Object.entries(plan.apply)) {
+        for (const [key, { data: pageData, updatedAt, revisionId: madeOn }] of Object.entries(plan.apply)) {
           const page = Number(key);
           writeLocalPage(localStorage, layout, noteId, page, pageData);
           if (knownRef.current) knownRef.current.pages[page] = pageFingerprint(pageData);
           expect(page, pageFingerprint(pageData));
-          metaRef.current[page] = { updatedAt, synced: true };
+          metaRef.current[page] = { updatedAt, synced: true, revisionId: madeOn };
           dirtyRef.current.delete(page);
           live.current.applyPage(page, pageData);
         }
@@ -209,7 +217,7 @@ export function useAnnotationSync({ noteId, layout, revisionId, userId, strokes,
       if (fp === (known.pages[page] ?? pageFingerprint(null))) continue;
       if (known.pages[page] === undefined && isEmptyPage(data)) continue;
       known.pages[page] = fp;
-      metaRef.current[page] = { updatedAt: new Date().toISOString(), synced: false };
+      metaRef.current[page] = { updatedAt: new Date().toISOString(), synced: false, revisionId: live.current.revisionId ?? null };
       dirtyRef.current.add(page);
       changed = true;
     }
@@ -235,5 +243,17 @@ export function useAnnotationSync({ noteId, layout, revisionId, userId, strokes,
     };
   }, [flush, schedule]);
 
-  return { status, retry: () => schedule(0) };
+  // Recompute which older versions the visible annotations belong to.
+  useEffect(() => {
+    const known = knownRef.current;
+    if (!known || known.scope !== scope) return;
+    const withContent = Object.entries(known.pages)
+      .filter(([, fp]) => !isEmptyPage(JSON.parse(fp)))
+      .map(([p]) => Number(p));
+    const next = staleRevisions(metaRef.current, withContent, revisionId);
+    setStaleRevisionIds((prev) => (prev.join() === next.join() ? prev : next));
+    // Runs after the edit check above, which updates the known pages and their versions.
+  }, [scope, revisionId, strokes, shapes, textBoxes]);
+
+  return { status, retry: () => schedule(0), staleRevisionIds };
 }

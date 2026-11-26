@@ -20,6 +20,8 @@ export interface PageSyncMeta {
   updatedAt: string;
   /** True once this version of the page is saved to the account. */
   synced: boolean;
+  /** The note version the page was annotated on (unknown for older saves). */
+  revisionId?: string | null;
 }
 
 export type SyncMeta = Record<number, PageSyncMeta>;
@@ -28,6 +30,7 @@ export interface RemotePage {
   page_number: number;
   data: Partial<PageAnnotations> | null;
   updated_at: string;
+  revision_id?: string | null;
 }
 
 export const EMPTY_PAGE: PageAnnotations = { strokes: [], shapes: [], textBoxes: [] };
@@ -108,7 +111,7 @@ export function saveMeta(storage: Storage, layout: AnnotationLayout, noteId: str
 
 export interface MergePlan {
   /** Account copies that are newer than this device's: apply them here. */
-  apply: Record<number, { data: PageAnnotations; updatedAt: string }>;
+  apply: Record<number, { data: PageAnnotations; updatedAt: string; revisionId: string | null }>;
   /** Pages whose device copy must be uploaded. */
   upload: number[];
 }
@@ -129,10 +132,31 @@ export function planMerge(local: Record<number, PageAnnotations>, meta: SyncMeta
     const remoteTime = r ? Date.parse(r.updated_at) : -Infinity;
     if (r && remoteTime > localTime) {
       const data = normalizePage(r.data);
-      if (pageFingerprint(data) !== pageFingerprint(local[page])) plan.apply[page] = { data, updatedAt: r.updated_at };
+      if (pageFingerprint(data) !== pageFingerprint(local[page])) plan.apply[page] = { data, updatedAt: r.updated_at, revisionId: r.revision_id ?? null };
     } else if ((m && !m.synced) || (!m && hasLocal)) {
       if (!r || pageFingerprint(r.data) !== pageFingerprint(local[page])) plan.upload.push(page);
     }
   }
   return plan;
+}
+
+/** Short hash of a note's content, stored with annotations to spot layout changes. */
+export function contentHash(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+/** Versions, other than `current`, that pages with annotations were made on. */
+export function staleRevisions(meta: SyncMeta, pagesWithContent: number[], current: string | null | undefined): string[] {
+  if (!current) return [];
+  const ids = new Set<string>();
+  for (const page of pagesWithContent) {
+    const id = meta[page]?.revisionId;
+    if (id && id !== current) ids.add(id);
+  }
+  return [...ids].sort();
 }

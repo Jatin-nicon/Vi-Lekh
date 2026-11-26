@@ -39,6 +39,7 @@
 - [x] 6.1 Render one `AnnotationLayer` per HTML page with an intrinsic size of 794×1123 and `scale = fit × zoom`, using the new `vilekh_html_a4_*` localStorage keys. Verify by hand that strokes stay on their text when resizing from desktop to 390px wide and when changing the zoom
 - [ ] 6.2 Add debounced (2s) account sync with per-page `updated_at` merging, a Saved, Saving or Not synced chip, and an upload after sign-in. Verify that annotations drawn in one browser profile appear in a second profile signed in as the same user
 - [ ] 6.3 Store `revision_id`, page count and content hash with each annotation set, and show the "made on v<N>" notice on mismatch. Verify by annotating, publishing an edit, and reloading
+  - Done: revision, page count and content hash are stored per page, and the notice shows with Dismiss (checked in two browser profiles with stubbed account calls). Left: the "view v<N>" option, which needs past-version viewing (11.2), and a check on the live site after a real publish.
 - [ ] 6.4 Show the one-time "layout changed" notice when legacy `vilekh_annotations_<note>` keys exist, without deleting them, and verify the keys are still present after dismissing it
 - [ ] 6.5 Update the "Annotation & History Architecture" section of `README.md` to describe page-unit coordinates, account sync and version history, and verify the README renders
 

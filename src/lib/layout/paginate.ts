@@ -139,7 +139,7 @@ export function paginate(root: HTMLElement, options: PaginateOptions = {}): Pagi
     for (const child of Array.from(parent.children)) {
       if (!(child instanceof doc.defaultView!.HTMLElement)) continue;
       const el = child as HTMLElement;
-      if (el.hasAttribute(SPACER_ATTR) || SKIP_TAGS.has(el.tagName.toLowerCase())) continue;
+      if (el.hasAttribute(SPACER_ATTR) || el.hasAttribute("data-vl-overlay") || SKIP_TAGS.has(el.tagName.toLowerCase())) continue;
 
       const box = measure(el, root);
       if (box.height <= 0) continue;

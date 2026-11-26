@@ -96,6 +96,8 @@ export interface NoteBlock {
 
 export interface Revision {
   id: string;
+  /** Published versions are numbered 1, 2, 3… per note; null for unpublished rows. */
+  version_number?: number | null;
   note_id: string;
   author_id: string;
   base_revision_id?: string | null;

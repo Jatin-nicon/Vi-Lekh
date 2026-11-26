@@ -51,6 +51,10 @@ export default function ReaderCheckPage() {
 
 /** `?uid=…` syncs annotations as that user (account calls can be stubbed in tests). */
 function Reader() {
-  const uid = useSearchParams().get("uid");
-  return <NoteReader note={NOTE} revision={REVISION} courseTitle="Dev course" syncUserId={uid ?? undefined} />;
+  const params = useSearchParams();
+  const uid = params.get("uid");
+  // `?rev=…&v=…` simulates a newer published version of the note.
+  const rev = params.get("rev");
+  const revision = rev ? { ...REVISION, id: rev, version_number: Number(params.get("v")) || null } : REVISION;
+  return <NoteReader note={NOTE} revision={revision} courseTitle="Dev course" syncUserId={uid ?? undefined} />;
 }
