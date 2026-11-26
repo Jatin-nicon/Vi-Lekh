@@ -26,6 +26,7 @@
     "lucide-react": "^1.70.0",
     "next": "16.4.5",
     "node-diff3": "^4.0.0",
+    "parse5": "^8.1.1",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.5.438",
     "prismjs": "^1.30.0",

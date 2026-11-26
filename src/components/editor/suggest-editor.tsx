@@ -3,9 +3,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Columns2, Eye, FileEdit, Loader2, Send, Trash2, MessageSquareWarning, GitPullRequestDraft } from "lucide-react";
-import { HtmlNoteEditor } from "@/components/editor/html-note-editor";
-import { LivePreview } from "@/components/editor/live-preview";
+import { ArrowLeft, Loader2, Send, Trash2, MessageSquareWarning, GitPullRequestDraft } from "lucide-react";
+import { PageEditor } from "@/components/editor/page-editor";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/auth/user-menu";
 import type { Contributor } from "@/lib/editor/contribution-snippets";
@@ -23,9 +22,9 @@ import {
 const AUTOSAVE_MS = 2000;
 
 /**
- * The editor in suggest mode (task 9.2): edits go into the user's private
- * draft for this note, autosaved, and are submitted for review instead of
- * published.
+ * The editor in suggest mode: the contributor edits the rendered page (no
+ * HTML code view); edits go into their private draft for this note,
+ * autosaved, and are submitted for review instead of published.
  */
 export function SuggestEditor({
   note,
@@ -45,7 +44,6 @@ export function SuggestEditor({
   const [html, setHtml] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
-  const [view, setView] = useState<"editor" | "split" | "preview">("split");
   const [submitOpen, setSubmitOpen] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -86,13 +84,13 @@ export function SuggestEditor({
     }
   }, []);
 
-  const onChange = (value: string) => {
+  const onChange = useCallback((value: string) => {
     setHtml(value);
     latest.current.html = value;
     setSaveState("saving");
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(() => void flush(), AUTOSAVE_MS);
-  };
+  }, [flush]);
 
   // Save pending edits when leaving the page.
   useEffect(() => () => {
@@ -118,19 +116,6 @@ export function SuggestEditor({
     );
   }
 
-  const tab = (m: typeof view, icon: React.ReactNode, label: string, extra = "") => (
-    <button
-      type="button"
-      onClick={() => setView(m)}
-      className={`${extra} flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
-        view === m ? "bg-white dark:bg-[#181716] text-[#A85D44] dark:text-[#C4785E] shadow-sm font-semibold" : "text-[#757069] dark:text-[#948F86] hover:text-[#2D2926]"
-      }`}
-    >
-      {icon}
-      <span className="hidden sm:inline">{label}</span>
-    </button>
-  );
-
   return (
     <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7]">
       <header className="border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/95 dark:bg-[#181716]/95 backdrop-blur sticky top-0 z-50">
@@ -150,18 +135,13 @@ export function SuggestEditor({
             <span className="text-[11px] text-[#757069] dark:text-[#948F86] hidden sm:inline" role="status">
               {saveState === "saving" ? "Saving draft…" : saveState === "error" ? "Couldn't save — retrying when you type" : "Draft saved"}
             </span>
-            <div className="flex items-center gap-1 p-1 rounded-xl bg-[#EFEBE3] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E]">
-              {tab("editor", <FileEdit className="w-3.5 h-3.5" />, "Editor")}
-              {tab("split", <Columns2 className="w-3.5 h-3.5" />, "Split", "hidden md:flex")}
-              {tab("preview", <Eye className="w-3.5 h-3.5" />, "Preview")}
-            </div>
             <ThemeToggle />
             <UserMenu />
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6">
         <div className="p-4 rounded-xl bg-[#EEF4FF] dark:bg-[#1B2433] border border-[#BFD3F2] dark:border-[#2C3E5C] text-xs text-[#1E3A8A] dark:text-[#AFC6F0] leading-relaxed">
           You&apos;re suggesting changes. Nothing changes in the published note until a course editor reviews and merges your
           suggestion. Your draft is private and saved as you type, so you can leave and come back.
@@ -177,24 +157,9 @@ export function SuggestEditor({
           </div>
         )}
 
-        {view === "split" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            <HtmlNoteEditor value={html} onChange={onChange} contributor={contributor} />
-            <LivePreview html={html} noteTitle={note.title} />
-          </div>
-        )}
-        {view === "editor" && (
-          <div className="max-w-4xl mx-auto">
-            <HtmlNoteEditor value={html} onChange={onChange} contributor={contributor} />
-          </div>
-        )}
-        {view === "preview" && (
-          <div className="max-w-4xl mx-auto">
-            <LivePreview html={html} noteTitle={note.title} />
-          </div>
-        )}
+        <PageEditor html={html} onChange={onChange} contributor={contributor} />
 
-        <div className="max-w-4xl mx-auto p-5 rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="p-5 rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {confirmDiscard ? (
             <div className="flex flex-wrap items-center gap-2 text-xs">
               <span>Delete this draft? This can&apos;t be undone; the published note stays as it is.</span>
