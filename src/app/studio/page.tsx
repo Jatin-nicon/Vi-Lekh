@@ -39,6 +39,7 @@ import {
   FolderInput
 } from "lucide-react";
 import Link from "next/link";
+import { getReviewQueue } from "@/lib/data/suggestions";
 import { useRouter } from "next/navigation";
 
 function StudioContent() {
@@ -387,6 +388,7 @@ function StudioContent() {
           </div>
 
           <div className="flex items-center gap-3">
+            <ReviewsLink />
             <Link
               href="/"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors"
@@ -1083,3 +1085,29 @@ export default function StudioPage() {
   );
 }
 
+/** Link to the review queue with the number of pending suggestions (task 10.1). */
+function ReviewsLink() {
+  const [count, setCount] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getReviewQueue()
+      .then((list) => !cancelled && setCount(list.length))
+      .catch(() => !cancelled && setCount(null));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return (
+    <Link
+      href="/review"
+      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-xs font-medium text-[#757069] dark:text-[#948F86] transition-colors"
+    >
+      <span>Reviews</span>
+      {count !== null && count > 0 && (
+        <span className="min-w-[1.25rem] px-1.5 py-px rounded-full bg-[#A85D44] text-white text-[10px] font-bold text-center" aria-label={`${count} pending`}>
+          {count}
+        </span>
+      )}
+    </Link>
+  );
+}

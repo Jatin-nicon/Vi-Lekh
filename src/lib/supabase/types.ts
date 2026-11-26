@@ -35,6 +35,9 @@ export interface Module {
 
 export interface Note {
   id: string;
+  /** Set on notes created by saving a suggestion as a separate copy. */
+  forked_from_note_id?: string | null;
+  forked_from_revision_id?: string | null;
   course_id: string;
   module_id?: string;
   slug: string;

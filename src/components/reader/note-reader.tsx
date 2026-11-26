@@ -26,7 +26,7 @@ import { createClient } from "@/lib/supabase/client";
 import { fieldAtPoint, formFieldsKey } from "@/lib/layout/form-fields";
 import { exportAnnotatedPdf } from "@/lib/pdf/pdf-export";
 import { printPagedHtml } from "@/lib/pdf/html-print-export";
-import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe, Maximize, Minimize, ZoomIn, ZoomOut, Cloud, CloudOff, Loader2, History } from "lucide-react";
+import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe, Maximize, Minimize, ZoomIn, ZoomOut, Cloud, CloudOff, Loader2, History, GitPullRequestDraft, Copy } from "lucide-react";
 import {
   ANNOTATION_KINDS,
   annotationStorageKey,
@@ -38,6 +38,8 @@ import { PastVersionBanner, VersionHistoryPanel } from "./version-history";
 import { getVersion, restoreVersion, setVersionParam, versionParam, type Version } from "@/lib/data/versions";
 import { HtmlDiffViewer } from "@/components/diff/html-diff-viewer";
 import { notesService } from "@/lib/data/notes-service";
+import { getRelatedCopies } from "@/lib/data/suggestions";
+import Link from "next/link";
 import { formatDate } from "@/lib/utils";
 
 interface NoteReaderProps {
@@ -305,6 +307,31 @@ export function NoteReader({
       cancelled = true;
     };
   }, [authUserId, note.course_id]);
+  // Copies made from suggestions link to and from the original (task 10.4).
+  const [related, setRelated] = useState<Awaited<ReturnType<typeof getRelatedCopies>> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getRelatedCopies(note.id, note.forked_from_note_id)
+      .then((r) => !cancelled && setRelated(r))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [note.id, note.forked_from_note_id]);
+
+  // Anyone signed in can suggest edits; signed-out visitors are asked to sign in (task 9.1).
+  const suggestHref = `/edit?note=${note.id}&mode=suggest`;
+  const handleSuggest = useCallback(async () => {
+    if (!auth?.user) {
+      try {
+        await auth?.signInWithGoogle();
+      } catch {
+        return;
+      }
+    }
+    window.location.assign(suggestHref);
+  }, [auth, suggestHref]);
+
   const handleRestore = useCallback(async () => {
     if (!viewing) return;
     setRestoring(true);
@@ -958,6 +985,17 @@ export function NoteReader({
               <CheckCircle2 className="w-3 h-3" />
               Verified Notes
             </span>
+            {hasHtml && (
+              <button
+                type="button"
+                onClick={handleSuggest}
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-[#BFD3F2] dark:border-[#2C3E5C] text-[#1E3A8A] dark:text-[#AFC6F0] font-medium hover:bg-[#EEF4FF] dark:hover:bg-[#1B2433] cursor-pointer"
+                title={auth?.user ? "Propose changes for a course editor to review" : "Sign in to suggest edits"}
+              >
+                <GitPullRequestDraft className="w-3.5 h-3.5" />
+                <span>Suggest edits</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setHistoryOpen(true)}
@@ -979,6 +1017,31 @@ export function NoteReader({
             </button>
           </div>
         </div>
+
+        {related && (related.original || related.copies.length > 0) && (
+          <div className="print:hidden mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#757069] dark:text-[#948F86]">
+            <Copy className="w-3.5 h-3.5" />
+            {related.original && (
+              <span>
+                Copy of{" "}
+                <Link href={`/notes?course=${related.original.course_id}&note=${related.original.id}`} className="underline text-[#A85D44]">
+                  {related.original.title}
+                </Link>
+              </span>
+            )}
+            {related.copies.length > 0 && (
+              <span>
+                Copies of this note:{" "}
+                {related.copies.map((c, i) => (
+                  <React.Fragment key={c.id}>
+                    {i > 0 && ", "}
+                    <Link href={`/notes?course=${c.course_id}&note=${c.id}`} className="underline text-[#A85D44]">{c.title}</Link>
+                  </React.Fragment>
+                ))}
+              </span>
+            )}
+          </div>
+        )}
 
         {historyOpen && (
           <VersionHistoryPanel
