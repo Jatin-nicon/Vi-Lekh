@@ -161,6 +161,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** The auth context, or null outside an AuthProvider (e.g. dev harness pages). */
+export function useOptionalAuth() {
+  return useContext(AuthContext) ?? null;
+}
+
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
