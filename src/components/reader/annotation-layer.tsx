@@ -12,6 +12,7 @@ import {
 } from "@/lib/annotations/storage-keys";
 import { loadTextStyle, type TextBoxFont } from "@/lib/annotations/text-style";
 import { NOTE_HAND, ensureNoteFonts } from "@/lib/layout/note-fonts";
+import { openLink, splitLinks } from "@/lib/layout/links";
 
 export interface AnnotationPoint {
   x: number;
@@ -1926,7 +1927,28 @@ function WordDocsTextBoxItem({
               ...(isHand ? { fontFamily: HAND_STACK, lineHeight: 1.35 } : null),
             }}
           >
-            {box.text}
+            {splitLinks(box.text).map((part, i) =>
+              part.href ? (
+                <a
+                  key={i}
+                  href={part.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openLink(part.href!);
+                  }}
+                  className="pointer-events-auto underline underline-offset-2 cursor-pointer hover:opacity-80"
+                  title={`Open ${part.href} in a new tab`}
+                >
+                  {part.text}
+                </a>
+              ) : (
+                <React.Fragment key={i}>{part.text}</React.Fragment>
+              ),
+            )}
           </div>
         )}
       </div>
