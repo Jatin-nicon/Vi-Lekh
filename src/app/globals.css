@@ -236,6 +236,80 @@ code, pre {
   background: rgba(148, 143, 134, 0.45);
 }
 
+/* Utility to hide scrollbars while maintaining scroll functionality */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Sleek custom scrollbar for sidebar navigation, dropdowns, and panels */
+.sidebar-scrollbar {
+  --scrollbar-thumb: rgba(117, 112, 105, 0.45);
+  --scrollbar-thumb-hover: rgba(168, 93, 68, 0.7);
+  --scrollbar-thumb-active: #6E3220;
+  --scrollbar-track: transparent;
+}
+
+.dark .sidebar-scrollbar {
+  --scrollbar-thumb: rgba(148, 143, 134, 0.45);
+  --scrollbar-thumb-hover: rgba(196, 120, 94, 0.75);
+  --scrollbar-thumb-active: #8A3E26;
+  --scrollbar-track: transparent;
+}
+
+/* Explicit high-contrast mode override (WCAG 1.4.11 / prefers-contrast: more) */
+@media (prefers-contrast: more) {
+  .sidebar-scrollbar {
+    --scrollbar-thumb: #757069;
+    --scrollbar-thumb-hover: #2D2926;
+    --scrollbar-thumb-active: #000000;
+    --scrollbar-track: #E8E3D9;
+  }
+  .dark .sidebar-scrollbar {
+    --scrollbar-thumb: #948F86;
+    --scrollbar-thumb-hover: #E3DFD7;
+    --scrollbar-thumb-active: #FFFFFF;
+    --scrollbar-track: #33312E;
+  }
+}
+
+/* Firefox standard scrollbars */
+@supports not selector(::-webkit-scrollbar) {
+  .sidebar-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  }
+}
+
+/* WebKit / Chromium custom scrollbar styling with specific thumb hover & active states */
+.sidebar-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+.sidebar-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 9999px;
+  transition: background-color 0.15s ease;
+}
+
+/* Trigger ONLY when pointer is directly hovering over the scrollbar thumb */
+.sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Trigger when user clicks and drags the scrollbar thumb */
+.sidebar-scrollbar::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-active);
+}
+
 /* Notion Color Palette for Prism Tokens */
 .token.comment,
 .token.prolog,

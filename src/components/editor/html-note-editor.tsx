@@ -260,10 +260,10 @@ export function HtmlNoteEditor({
 
   return (
     <div
-      className={`relative flex flex-col min-h-[550px] sm:min-h-[650px] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#1C1A19] shadow-sm overflow-hidden transition-colors ${className}`}
+      className={`relative flex flex-col h-[580px] xl:h-[650px] rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#1C1A19] shadow-sm overflow-hidden transition-colors ${className}`}
     >
       {/* Top Snippet & Formatting Toolbar */}
-      <div className="sticky top-16 z-20 flex flex-wrap items-center justify-between gap-2 border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/95 dark:bg-[#22201E]/95 backdrop-blur-xs px-3 py-2 select-none shrink-0">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/95 dark:bg-[#22201E]/95 backdrop-blur-xs px-3 py-2 select-none shrink-0">
         <div className="flex flex-wrap items-center gap-1.5 overflow-x-auto max-w-full">
           {snippets.map((group, gIdx) => (
             <div key={group.group} className="flex items-center gap-1">
@@ -298,7 +298,7 @@ export function HtmlNoteEditor({
       </div>
 
       {/* Editor Body with Synchronized Line Gutter */}
-      <div className="relative flex-1 flex min-h-[460px] bg-[#FAF8F5] dark:bg-[#181615] overflow-hidden">
+      <div className="relative flex-1 min-h-0 flex bg-[#FAF8F5] dark:bg-[#181615] overflow-hidden">
         {/* Line Numbers Gutter */}
         <div
           ref={gutterRef}
@@ -321,7 +321,7 @@ export function HtmlNoteEditor({
           onScroll={handleScroll}
           placeholder={placeholder}
           spellCheck={false}
-          className="flex-1 p-4 font-mono text-[13px] leading-relaxed text-[#2D2926] dark:text-[#E3DFD7] bg-transparent outline-none resize-none overflow-y-auto whitespace-pre tab-2 border-none"
+          className="flex-1 min-h-0 p-4 font-mono text-[13px] leading-relaxed text-[#2D2926] dark:text-[#E3DFD7] bg-transparent outline-none resize-none overflow-y-auto sidebar-scrollbar whitespace-pre tab-2 border-none"
           style={{ tabSize: 2 }}
         />
       </div>

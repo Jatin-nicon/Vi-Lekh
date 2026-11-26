@@ -113,8 +113,8 @@ function EditContent() {
     initEditor();
   }, [noteId, user, authLoading, router]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!note || !user || !isAuthorized) return;
 
     setIsSubmitting(true);
@@ -170,7 +170,7 @@ function EditContent() {
   return (
     <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] transition-colors">
       {/* Top Bar */}
-      <header className="border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/95 dark:bg-[#181716]/95 backdrop-blur sticky top-0 z-40">
+      <header className="border-b border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB]/95 dark:bg-[#181716]/95 backdrop-blur sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
@@ -204,8 +204,8 @@ function EditContent() {
             </div>
           </div>
 
-          {/* View Mode Switcher (Editor / Split / Preview) */}
-          <div className="flex items-center gap-2 sm:gap-4">
+          {/* View Mode Switcher (Editor / Split / Preview) & Actions */}
+          <div className="flex items-center gap-2 sm:gap-3">
             <div className="flex items-center gap-1 p-1 rounded-xl bg-[#EFEBE3] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E]">
               <button
                 type="button"
@@ -245,6 +245,27 @@ function EditContent() {
               </button>
             </div>
 
+            {/* Direct Sticky Publish Button */}
+            <button
+              type="button"
+              onClick={() => handleSubmit()}
+              disabled={isSubmitting}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] disabled:opacity-50 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer shrink-0"
+              title="Publish Note Live Immediately"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span className="hidden sm:inline">Publishing...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Publish</span>
+                </>
+              )}
+            </button>
+
             <ThemeToggle />
             <UserMenu />
           </div>
@@ -270,20 +291,20 @@ function EditContent() {
         {/* Dynamic View Modes: Editor | Split | Reader Preview */}
         {editorViewMode === "split" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            <HtmlNoteEditor value={html} onChange={setHtml} />
-            <LivePreview html={html} noteTitle={noteTitle || note.title} />
+            <HtmlNoteEditor value={html} onChange={setHtml} className="h-[580px] xl:h-[650px]" />
+            <LivePreview html={html} noteTitle={noteTitle || note.title} className="h-[580px] xl:h-[650px]" />
           </div>
         )}
 
         {editorViewMode === "editor" && (
           <div className="max-w-4xl mx-auto">
-            <HtmlNoteEditor value={html} onChange={setHtml} />
+            <HtmlNoteEditor value={html} onChange={setHtml} className="h-[580px] xl:h-[650px]" />
           </div>
         )}
 
         {editorViewMode === "preview" && (
           <div className="max-w-4xl mx-auto">
-            <LivePreview html={html} noteTitle={noteTitle || note.title} />
+            <LivePreview html={html} noteTitle={noteTitle || note.title} className="h-[580px] xl:h-[650px]" />
           </div>
         )}
 

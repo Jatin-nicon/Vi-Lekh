@@ -21,6 +21,7 @@ import {
 import Link from "next/link";
 
 interface CourseSidebarProps {
+  className?: string;
   courses: Course[];
   selectedCourse: Course | null;
   onSelectCourse: (course: Course) => void;
@@ -43,6 +44,7 @@ interface CourseSidebarProps {
 }
 
 export function CourseSidebar({
+  className,
   courses,
   selectedCourse,
   onSelectCourse,
@@ -85,9 +87,9 @@ export function CourseSidebar({
   );
 
   return (
-    <aside className="w-72 shrink-0 border-r border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB] dark:bg-[#181716] flex flex-col h-full min-h-[calc(100vh-4rem)]">
+    <aside className={`w-full md:w-72 shrink-0 border-r border-[#E8E3D9] dark:border-[#33312E] bg-[#F5F2EB] dark:bg-[#181716] flex flex-col h-full overscroll-contain ${className || ""}`}>
       {/* Course Info Header & Course Switcher */}
-      <div className="p-4 border-b border-[#E8E3D9] dark:border-[#33312E] relative">
+      <div className="p-4 border-b border-[#E8E3D9] dark:border-[#33312E] relative shrink-0">
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-1.5 text-xs text-[#A85D44] dark:text-[#C4785E] font-medium">
             <Brain className="w-3.5 h-3.5" />
@@ -146,7 +148,7 @@ export function CourseSidebar({
 
             {/* Courses list dropdown */}
             {isCourseDropdownOpen && courses.length > 1 && (
-              <div className="absolute left-0 top-full mt-2 w-full p-1.5 rounded-xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-lg z-50 animate-in fade-in">
+              <div className="absolute left-0 top-full mt-2 w-full max-h-64 overflow-y-auto sidebar-scrollbar p-1.5 rounded-xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-lg z-50 animate-in fade-in">
                 <span className="text-[10px] uppercase font-semibold text-[#757069] px-2 py-1 block">
                   Switch Course
                 </span>
@@ -215,7 +217,7 @@ export function CourseSidebar({
 
       {/* Global Filter / Search Bar */}
       {selectedCourse && (
-        <div className="p-3 border-b border-[#E8E3D9]/60 dark:border-[#33312E]/60 flex items-center gap-2">
+        <div className="p-3 border-b border-[#E8E3D9]/60 dark:border-[#33312E]/60 flex items-center gap-2 shrink-0">
           <div className="relative flex-1">
             <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[#757069]" />
             <input
@@ -240,7 +242,7 @@ export function CourseSidebar({
       )}
 
       {/* Syllabus Modules & Note Links */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3">
+      <div className="flex-1 overflow-y-auto overscroll-contain pl-3 pr-2 py-3 space-y-3 min-h-0 sidebar-scrollbar">
         {selectedCourse && (
           <div className="flex items-center justify-between px-1 pb-1">
             <span className="text-[10px] font-bold uppercase tracking-wider text-[#757069] dark:text-[#948F86]">

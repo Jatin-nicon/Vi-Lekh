@@ -47,7 +47,7 @@ export function UserMenu() {
 
   return (
     <>
-      <div className="relative" ref={menuRef}>
+      <div className="relative z-50" ref={menuRef}>
         {user ? (
           // Logged In User Pill
           <button
@@ -67,10 +67,10 @@ export function UserMenu() {
                 {profile?.display_name ? profile.display_name[0].toUpperCase() : "U"}
               </div>
             )}
-            <span className="max-w-[100px] truncate text-[#2D2926] dark:text-[#E3DFD7]">
+            <span className="hidden sm:inline-block max-w-[100px] truncate text-[#2D2926] dark:text-[#E3DFD7]">
               {profile?.display_name}
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#A85D44]/15 text-[#A85D44] dark:text-[#C4785E] font-semibold uppercase">
+            <span className="hidden sm:inline-block text-[10px] px-1.5 py-0.5 rounded bg-[#A85D44]/15 text-[#A85D44] dark:text-[#C4785E] font-semibold uppercase">
               {roleLabel}
             </span>
             <ChevronDown className="w-3.5 h-3.5 text-[#757069]" />
@@ -80,10 +80,12 @@ export function UserMenu() {
           <button
             type="button"
             onClick={() => setIsAuthOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] text-white text-xs font-medium shadow-sm transition-colors"
+            className="flex items-center gap-1.5 p-2 sm:px-3 sm:py-1.5 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] text-white text-xs font-medium shadow-sm transition-colors"
+            title="Sign In"
+            aria-label="Sign In"
           >
             <LogIn className="w-3.5 h-3.5" />
-            <span>Sign In</span>
+            <span className="hidden sm:inline">Sign In</span>
           </button>
         )}
 
