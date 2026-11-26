@@ -7,7 +7,8 @@
  * Not available in production builds.
  */
 
-import { notFound } from "next/navigation";
+import { notFound, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { NoteReader } from "@/components/reader/note-reader";
 import { htmlToBlocks } from "@/lib/editor/block-converter";
 import type { Note, Revision } from "@/lib/supabase/types";
@@ -41,5 +42,15 @@ const REVISION: Revision = {
 
 export default function ReaderCheckPage() {
   if (process.env.NODE_ENV === "production") notFound();
-  return <NoteReader note={NOTE} revision={REVISION} courseTitle="Dev course" />;
+  return (
+    <Suspense>
+      <Reader />
+    </Suspense>
+  );
+}
+
+/** `?uid=…` syncs annotations as that user (account calls can be stubbed in tests). */
+function Reader() {
+  const uid = useSearchParams().get("uid");
+  return <NoteReader note={NOTE} revision={REVISION} courseTitle="Dev course" syncUserId={uid ?? undefined} />;
 }
