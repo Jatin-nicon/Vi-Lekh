@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, Suspense } from "react";
 import { notesService } from "@/lib/data/notes-service";
-import { AuthProvider } from "@/lib/auth/auth-context";
+import { AuthProvider, useAuth } from "@/lib/auth/auth-context";
 import { CourseSidebar } from "@/components/navigation/course-sidebar";
 import { NoteReader } from "@/components/reader/note-reader";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -21,6 +21,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 function NotesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { isSuperAdmin, isCoreTeam } = useAuth();
   const courseParam = searchParams.get("course");
   const noteParam = searchParams.get("note");
 
@@ -211,6 +212,17 @@ function NotesContent() {
               <BookOpen className="w-3.5 h-3.5 text-[#A85D44] dark:text-[#C4785E]" />
               <span className="hidden sm:inline">All Courses</span>
             </Link>
+
+            {(isSuperAdmin || isCoreTeam) && (
+              <Link
+                href="/studio"
+                className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#A85D44]/30 bg-[#A85D44]/10 hover:bg-[#A85D44]/20 text-xs font-semibold text-[#A85D44] dark:text-[#C4785E] transition-colors"
+                title="Creator Studio"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Studio</span>
+              </Link>
+            )}
 
             <div className="flex items-center gap-2 pl-2 border-l border-[#E8E3D9] dark:border-[#33312E]">
               <ThemeToggle />

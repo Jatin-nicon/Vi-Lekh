@@ -59,6 +59,22 @@ export class CoursesController {
     return this.coursesService.createCourse(body, user);
   }
 
+  @Patch(':id')
+  async updateCourse(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body()
+    body: {
+      title?: string;
+      slug?: string;
+      description?: string;
+      domain?: string;
+      icon?: string;
+    },
+  ) {
+    return this.coursesService.updateCourse(id, body, user);
+  }
+
   @Delete(':id')
   async deleteCourse(
     @Param('id') id: string,

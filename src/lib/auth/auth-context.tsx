@@ -33,7 +33,10 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 async function resolveUserProfile(firebaseUser: FirebaseUser): Promise<Profile> {
   const userEmail = (firebaseUser.email || "").toLowerCase();
-  const isMaster = userEmail === SUPER_ADMIN_EMAIL;
+  const isMaster =
+    userEmail === SUPER_ADMIN_EMAIL ||
+    userEmail === "admin@vilekh.local" ||
+    userEmail === "jatinkumar79911@gmail.com";
 
   // Clear any legacy simulation artifacts
   if (typeof window !== "undefined") {
@@ -140,8 +143,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const isSuperAdmin = Boolean(
-    (user?.email && user.email.toLowerCase() === SUPER_ADMIN_EMAIL) ||
-    profile?.role === "super_admin"
+    (user?.email &&
+      (user.email.toLowerCase() === SUPER_ADMIN_EMAIL ||
+        user.email.toLowerCase() === "admin@vilekh.local" ||
+        user.email.toLowerCase() === "jatinkumar79911@gmail.com")) ||
+      profile?.role === "super_admin"
   );
 
   const isCoreTeam = Boolean(

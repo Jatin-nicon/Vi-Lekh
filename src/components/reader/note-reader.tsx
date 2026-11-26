@@ -14,7 +14,8 @@ import {
   type AnnotationStroke,
   type AnnotationTextBox,
 } from "./annotation-layer";
-import { CheckCircle2, Calendar } from "lucide-react";
+import { CheckCircle2, Calendar, Pencil } from "lucide-react";
+import Link from "next/link";
 import { formatDate } from "@/lib/utils";
 
 interface NoteReaderProps {
@@ -125,7 +126,15 @@ export function NoteReader({
             </span>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <Link
+              href={`/edit?note=${note.id}`}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#A85D44] hover:bg-[#8F4C35] text-white text-xs font-semibold shadow-xs transition-colors"
+              title="Edit this note"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              <span>Edit Note</span>
+            </Link>
             <span className="flex items-center gap-1.5" suppressHydrationWarning>
               <Calendar className="w-3.5 h-3.5" />
               Updated {formatDate(revision?.updated_at || note.updated_at)}

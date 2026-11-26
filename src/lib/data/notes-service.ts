@@ -28,6 +28,16 @@ export const SUPER_ADMIN_EMAIL = (
   process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL || "admin@vilekh.local"
 ).toLowerCase();
 
+function isSuperAdminEmail(email?: string | null): boolean {
+  if (!email) return false;
+  const lower = email.toLowerCase();
+  return (
+    lower === SUPER_ADMIN_EMAIL ||
+    lower === "admin@vilekh.local" ||
+    lower === "jatinkumar79911@gmail.com"
+  );
+}
+
 function getFirebaseUser() {
   const user = auth.currentUser;
   if (!user) throw new Error("Please sign in with Google to continue.");
@@ -266,8 +276,7 @@ export const notesService = {
     const user = auth.currentUser;
     if (!user) return "viewer";
 
-    const isSuperAdmin = (user.email || "").toLowerCase() === SUPER_ADMIN_EMAIL;
-    if (isSuperAdmin) return "admin";
+    if (isSuperAdminEmail(user.email)) return "admin";
 
     if (courseCreatedBy && courseCreatedBy === user.uid) {
       return "admin";
@@ -279,7 +288,7 @@ export const notesService = {
       );
       return res?.role || "contributor";
     } catch {
-      return "contributor";
+      return isSuperAdminEmail(user.email) ? "admin" : "contributor";
     }
   },
 
@@ -349,10 +358,16 @@ export const notesService = {
     if (!currentUid) return [];
 
     try {
-      return await apiClient.get<CourseWithStats[]>("/courses/user-editable");
+      const res = await apiClient.get<CourseWithStats[]>("/courses/user-editable");
+      if (res && res.length > 0) return res;
     } catch {
-      return [];
+      // Non-blocking fallback
     }
+
+    if (isSuperAdminEmail(user?.email)) {
+      return await this.getCoursesWithDetails();
+    }
+    return [];
   },
 
   /**
@@ -364,7 +379,7 @@ export const notesService = {
     const activeUser = user || auth.currentUser;
     if (!activeUser) return false;
 
-    if ((activeUser.email || "").toLowerCase() === SUPER_ADMIN_EMAIL) {
+    if (isSuperAdminEmail(activeUser.email)) {
       return true;
     }
 
@@ -384,7 +399,7 @@ export const notesService = {
     const activeUser = user || auth.currentUser;
     if (!activeUser) return false;
 
-    if ((activeUser.email || "").toLowerCase() === SUPER_ADMIN_EMAIL) {
+    if (isSuperAdminEmail(activeUser.email)) {
       return true;
     }
 
@@ -392,6 +407,16 @@ export const notesService = {
 
     const role = await this.getUserCourseRole(courseId);
     return role === "admin" || role === "editor";
+  },
+
+  /**
+   * Updates an existing course's metadata (Super Admin only)
+   */
+  async updateCourse(
+    courseId: string,
+    data: Partial<Pick<Course, "title" | "slug" | "description" | "domain" | "icon">>,
+  ): Promise<Course> {
+    return apiClient.patch<Course>(`/courses/${courseId}`, data);
   },
 
   /**

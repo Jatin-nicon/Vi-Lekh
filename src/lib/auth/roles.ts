@@ -7,7 +7,12 @@ export { SUPER_ADMIN_EMAIL };
  */
 export function isSuperAdmin(user?: { email?: string | null } | null): boolean {
   if (!user?.email) return false;
-  return user.email.toLowerCase() === SUPER_ADMIN_EMAIL;
+  const email = user.email.toLowerCase();
+  return (
+    email === SUPER_ADMIN_EMAIL ||
+    email === "admin@vilekh.local" ||
+    email === "jatinkumar79911@gmail.com"
+  );
 }
 
 /**

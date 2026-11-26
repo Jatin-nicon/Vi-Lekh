@@ -56,6 +56,12 @@ function StudioContent() {
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
   const [targetModuleIdForNote, setTargetModuleIdForNote] = useState<string | undefined>(undefined);
 
+  // Edit Course Modal state
+  const [isEditCourseOpen, setIsEditCourseOpen] = useState(false);
+  const [editCourseTitle, setEditCourseTitle] = useState("");
+  const [editCourseDesc, setEditCourseDesc] = useState("");
+  const [editCourseDomain, setEditCourseDomain] = useState("");
+
   // Inline editing state
   const [editingModuleId, setEditingModuleId] = useState<string | null>(null);
   const [editingModuleTitle, setEditingModuleTitle] = useState("");
@@ -229,6 +235,27 @@ function StudioContent() {
     );
   }, [courses, searchQuery]);
 
+  const handleUpdateCourse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCourse || !editCourseTitle.trim()) return;
+
+    try {
+      const updated = await notesService.updateCourse(selectedCourse.id, {
+        title: editCourseTitle.trim(),
+        description: editCourseDesc.trim(),
+        domain: editCourseDomain.trim(),
+      });
+      setSelectedCourse((prev) => (prev ? { ...prev, ...updated } : null));
+      setCourses((prev) =>
+        prev.map((c) => (c.id === selectedCourse.id ? { ...c, ...updated } : c))
+      );
+      setIsEditCourseOpen(false);
+    } catch (err) {
+      console.error("Error updating course:", err);
+      alert("Failed to update course.");
+    }
+  };
+
   if (authLoading || hasAccess === null) {
     return (
       <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] flex items-center justify-center p-12 text-[#757069]">
@@ -400,6 +427,23 @@ function StudioContent() {
                       <ExternalLink className="w-3.5 h-3.5 text-[#A85D44]" />
                       <span>Open in Reader</span>
                     </Link>
+
+                    {/* Super Admin Course Editing */}
+                    {isSuper && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditCourseTitle(selectedCourse.title);
+                          setEditCourseDesc(selectedCourse.description || "");
+                          setEditCourseDomain(selectedCourse.domain || "");
+                          setIsEditCourseOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:bg-[#EFEBE3] text-xs font-semibold text-[#2D2926] dark:text-[#E3DFD7] transition-colors"
+                      >
+                        <Pencil className="w-3.5 h-3.5 text-[#A85D44]" />
+                        <span>Edit Course</span>
+                      </button>
+                    )}
 
                     {/* Super Admin Collaborator Management */}
                     {isSuper && (
@@ -790,6 +834,69 @@ function StudioContent() {
           onClose={() => setIsAccessModalOpen(false)}
           course={selectedCourse}
         />
+      )}
+
+      {/* Edit Course Modal */}
+      {isEditCourseOpen && selectedCourse && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-md p-6 rounded-2xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-2xl text-[#2D2926] dark:text-[#E3DFD7]">
+            <div className="flex items-center justify-between pb-4 border-b border-[#E8E3D9] dark:border-[#33312E]">
+              <h3 className="text-base font-bold">Edit Course Details</h3>
+              <button
+                type="button"
+                onClick={() => setIsEditCourseOpen(false)}
+                className="p-1 rounded-lg text-[#757069] hover:text-[#2D2926]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <form onSubmit={handleUpdateCourse} className="mt-4 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold mb-1">Course Title</label>
+                <input
+                  type="text"
+                  required
+                  value={editCourseTitle}
+                  onChange={(e) => setEditCourseTitle(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-[#E8E3D9] dark:border-[#33312E] bg-white dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] outline-none focus:border-[#A85D44]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1">Domain</label>
+                <input
+                  type="text"
+                  value={editCourseDomain}
+                  onChange={(e) => setEditCourseDomain(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-[#E8E3D9] dark:border-[#33312E] bg-white dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] outline-none focus:border-[#A85D44]"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold mb-1">Description</label>
+                <textarea
+                  rows={3}
+                  value={editCourseDesc}
+                  onChange={(e) => setEditCourseDesc(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-[#E8E3D9] dark:border-[#33312E] bg-white dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] outline-none focus:border-[#A85D44]"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditCourseOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-[#757069] hover:bg-[#EFEBE3] dark:hover:bg-[#292825]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-[#A85D44] hover:bg-[#8F4C35] text-white text-xs font-semibold shadow-xs"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
