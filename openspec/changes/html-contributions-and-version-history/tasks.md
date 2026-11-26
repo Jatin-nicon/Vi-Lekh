@@ -39,7 +39,7 @@
 - [x] 6.1 Render one `AnnotationLayer` per HTML page with an intrinsic size of 794×1123 and `scale = fit × zoom`, using the new `vilekh_html_a4_*` localStorage keys. Verify by hand that strokes stay on their text when resizing from desktop to 390px wide and when changing the zoom
 - [ ] 6.2 Add debounced (2s) account sync with per-page `updated_at` merging, a Saved, Saving or Not synced chip, and an upload after sign-in. Verify that annotations drawn in one browser profile appear in a second profile signed in as the same user
 - [ ] 6.3 Store `revision_id`, page count and content hash with each annotation set, and show the "made on v<N>" notice on mismatch. Verify by annotating, publishing an edit, and reloading
-  - Done: revision, page count and content hash are stored per page, and the notice shows with Dismiss (checked in two browser profiles with stubbed account calls). Left: the "view v<N>" option, which needs past-version viewing (11.2), and a check on the live site after a real publish.
+  - Done: revision, page count and content hash are stored per page; the notice shows with "View v<N>" and Dismiss (checked in two browser profiles with stubbed account calls). Left: a check on the live site after a real publish.
 - [ ] 6.4 Show the one-time "layout changed" notice when legacy `vilekh_annotations_<note>` keys exist, without deleting them, and verify the keys are still present after dismissing it
 - [ ] 6.5 Update the "Annotation & History Architecture" section of `README.md` to describe page-unit coordinates, account sync and version history, and verify the README renders
 
@@ -73,8 +73,10 @@
 ## 11. Version history and restore (note-version-history)
 
 - [ ] 11.1 Add the History slide-over in the reader (versions newest first with number, date, author, merged-by, summary, source label and the current marker), and verify it against a note with direct-edit, suggestion and restore versions
-- [ ] 11.2 Add past-version viewing via `&version=<id>` (banner, Back to current, annotation tools disabled) and "Compare" using `HtmlDiffViewer`, and verify that viewing v2 and comparing v2 with the current version work
+  - Done: History panel with version, date, author, merged-by, summary, source label and current marker; checked on staging with direct-edit versions. Suggestion and restore labels are covered by unit tests until such versions exist.
+- [x] 11.2 Add past-version viewing via `&version=<id>` (banner, Back to current, annotation tools disabled) and "Compare" using `HtmlDiffViewer`, and verify that viewing v2 and comparing v2 with the current version work
 - [ ] 11.3 Add "Restore this version" (reviewers only, with a confirmation) calling `restore_version`, and verify that restoring v3 from v5 creates v6 marked "Restored from v3", that v4 and v5 remain, that restoring v5 again creates v7, and that a pending suggestion stays queued with "Outdated base"
+  - Done: "Restore this version" for course reviewers with a confirmation, calling restore_version; the version numbering and history kept on restore are covered by supabase/tests/rpc_rls.sql. Left: a restore through the app on staging while signed in as a reviewer.
 - [ ] 11.4 Add the "Contributor annotations" toggle (off by default, read-only, drawn under the reader's own annotations) for versions with `published_annotations`, and verify it after merging a suggestion with published annotations
 
 ## 12. Rollout and end-to-end checks
