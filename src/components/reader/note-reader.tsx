@@ -26,7 +26,7 @@ import { createClient } from "@/lib/supabase/client";
 import { fieldAtPoint, formFieldsKey } from "@/lib/layout/form-fields";
 import { exportAnnotatedPdf } from "@/lib/pdf/pdf-export";
 import { printPagedHtml } from "@/lib/pdf/html-print-export";
-import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe, Maximize, Minimize, ZoomIn, ZoomOut, Cloud, CloudOff, Loader2 } from "lucide-react";
+import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe, Maximize, Minimize, ZoomIn, ZoomOut, Cloud, CloudOff, Loader2, History } from "lucide-react";
 import {
   ANNOTATION_KINDS,
   annotationStorageKey,
@@ -34,6 +34,10 @@ import {
   type AnnotationLayout,
 } from "@/lib/annotations/storage-keys";
 import { PAGE_WIDTH } from "@/lib/layout/paginate";
+import { PastVersionBanner, VersionHistoryPanel } from "./version-history";
+import { getVersion, restoreVersion, setVersionParam, versionParam, type Version } from "@/lib/data/versions";
+import { HtmlDiffViewer } from "@/components/diff/html-diff-viewer";
+import { notesService } from "@/lib/data/notes-service";
 import { formatDate } from "@/lib/utils";
 
 interface NoteReaderProps {
@@ -55,6 +59,21 @@ export function NoteReader({
   syncUserId,
 }: NoteReaderProps) {
   const blocks = revision?.blocks || [];
+
+  // Version history (tasks 11.1–11.3): a past version opened read-only.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [viewing, setViewing] = useState<Version | null>(null);
+  const [comparing, setComparing] = useState(false);
+  const [versionError, setVersionError] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [canRestore, setCanRestore] = useState(false);
+  const [shownNoteId, setShownNoteId] = useState(note.id);
+  if (shownNoteId !== note.id) {
+    setShownNoteId(note.id);
+    setViewing(null);
+    setComparing(false);
+    setVersionError(null);
+  }
 
   // Annotation states
   const [tool, setTool] = useState<AnnotationTool | null>(null);
@@ -105,6 +124,13 @@ export function NoteReader({
     const rawHtml = blocksToHtml(blocks);
     return renderMathInHtml(rawHtml);
   }, [blocks]);
+
+  const pastContent = useMemo(
+    () => (viewing?.blocks?.length ? renderMathInHtml(blocksToHtml(viewing.blocks)) : ""),
+    [viewing],
+  );
+  /** What the reader shows: the current version, or the past one being viewed. */
+  const displayContent = viewing ? pastContent : renderedContent;
 
   const hasPdf = Boolean(effectivePdfSource);
   const hasHtml = Boolean(
@@ -224,6 +250,75 @@ export function NoteReader({
     textBoxes: pageTextBoxes,
     applyPage: applySyncedPage,
   });
+
+  const openVersion = useCallback(
+    async (id: string) => {
+      setVersionError(null);
+      setComparing(false);
+      if (id === revision?.id) {
+        setViewing(null);
+        setVersionParam(null);
+        return;
+      }
+      try {
+        const v = await getVersion(id);
+        if (!v || v.note_id !== note.id) throw new Error("That version could not be found.");
+        setViewing(v);
+        setVersionParam(id);
+        setTool(null);
+        setActiveTextId(null);
+        setActiveShapeId(null);
+      } catch (err) {
+        setVersionError(errorText(err, "That version could not be opened."));
+      }
+    },
+    [note.id, revision?.id],
+  );
+  const closeVersion = useCallback(() => {
+    setViewing(null);
+    setComparing(false);
+    setVersionError(null);
+    setVersionParam(null);
+  }, []);
+  // Open the version named in the URL (?version=…) once the note has loaded.
+  useEffect(() => {
+    const id = versionParam();
+    if (!id || id === revision?.id) return;
+    const t = setTimeout(() => void openVersion(id), 0);
+    return () => clearTimeout(t);
+    // Only for the note that was opened with the link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note.id]);
+  // Restoring is for the course's reviewers; the database checks it again.
+  const authUserId = auth?.user?.uid ?? null;
+  useEffect(() => {
+    let cancelled = false;
+    if (!authUserId) {
+      queueMicrotask(() => !cancelled && setCanRestore(false));
+    } else {
+      notesService
+        .canUserEditCourse(note.course_id)
+        .then((ok) => !cancelled && setCanRestore(ok))
+        .catch(() => !cancelled && setCanRestore(false));
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [authUserId, note.course_id]);
+  const handleRestore = useCallback(async () => {
+    if (!viewing) return;
+    setRestoring(true);
+    setVersionError(null);
+    try {
+      await restoreVersion(viewing.id);
+      // Reload the note so the restored version is shown as current.
+      setVersionParam(null);
+      window.location.reload();
+    } catch (err) {
+      setVersionError(`Restoring failed: ${errorText(err, "please try again.")}`);
+      setRestoring(false);
+    }
+  }, [viewing]);
 
   // Persists one page of the current layout to localStorage.
   const persistPage = useCallback(
@@ -749,8 +844,8 @@ export function NoteReader({
         </button>
       )}
       <div ref={readerBodyRef} className={`${isFullscreen ? (viewMode === "pdf" ? "max-w-6xl" : "max-w-none") : "max-w-5xl"} mx-auto transition-colors print:max-w-none print:p-0 print:m-0`}>
-        {/* Sticky Non-Scrolling Annotation Dock (Hidden in Print) */}
-        <AnnotationToolbar
+        {/* Sticky Non-Scrolling Annotation Dock (Hidden in Print); off while viewing a past version */}
+        {!viewing && <AnnotationToolbar
           tool={tool}
           onSelectTool={(newTool) => {
             setTool(newTool);
@@ -791,7 +886,7 @@ export function NoteReader({
           onSelectShapeWidth={setShapeWidth}
           shapeFillOpacity={shapeFillOpacity}
           onSelectShapeFillOpacity={setShapeFillOpacity}
-        />
+        />}
 
         {/* Slim Meta Breadcrumb Bar with PDF / Web Version Switcher */}
         <div className="print:hidden flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-[#E8E3D9] dark:border-[#33312E] text-xs text-[#757069] dark:text-[#948F86]">
@@ -865,6 +960,15 @@ export function NoteReader({
             </span>
             <button
               type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-[#E8E3D9] dark:border-[#383532] font-medium hover:text-[#2D2926] dark:hover:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] cursor-pointer"
+              title="Version history"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>History</span>
+            </button>
+            <button
+              type="button"
               onClick={toggleFullscreen}
               aria-pressed={isFullscreen}
               className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-[#E8E3D9] dark:border-[#383532] font-medium hover:text-[#2D2926] dark:hover:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] cursor-pointer"
@@ -876,8 +980,42 @@ export function NoteReader({
           </div>
         </div>
 
-        {staleRevisionIds.length > 0 && (
+        {historyOpen && (
+          <VersionHistoryPanel
+            noteId={note.id}
+            currentRevisionId={revision?.id}
+            viewingId={viewing?.id}
+            onView={(id) => {
+              setHistoryOpen(false);
+              void openVersion(id);
+            }}
+            onClose={() => setHistoryOpen(false)}
+          />
+        )}
+
+        {viewing ? (
+          <PastVersionBanner
+            versionNumber={viewing.version_number}
+            createdAt={viewing.created_at}
+            comparing={comparing}
+            canRestore={canRestore}
+            restoring={restoring}
+            error={versionError}
+            onCompare={() => setComparing((c) => !c)}
+            onRestore={handleRestore}
+            onBack={closeVersion}
+          />
+        ) : (
+          versionError && (
+            <div role="alert" className="print:hidden mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-xs text-red-800 dark:text-red-300">
+              {versionError}
+            </div>
+          )
+        )}
+
+        {!viewing && staleRevisionIds.length > 0 && (
           <OlderVersionNotice
+            onView={(id) => void openVersion(id)}
             key={`${note.id}:${annotationLayout}:${staleRevisionIds.join()}`}
             revisionIds={staleRevisionIds}
             currentVersion={revision?.version_number ?? null}
@@ -897,7 +1035,14 @@ export function NoteReader({
         )}
 
         {/* Document Body (PDF Viewer or Web HTML Viewer) */}
-        {viewMode === "pdf" && effectivePdfSource ? (
+        {viewing && comparing ? (
+          <HtmlDiffViewer
+            baseHtml={pastContent}
+            proposedHtml={renderedContent}
+            baseLabel={`v${viewing.version_number}`}
+            proposedLabel={revision?.version_number ? `v${revision.version_number} (current)` : "Current"}
+          />
+        ) : viewMode === "pdf" && effectivePdfSource && !viewing ? (
           <PdfViewer
             fullscreen={isFullscreen}
             pdfSource={effectivePdfSource}
@@ -905,7 +1050,7 @@ export function NoteReader({
             onActivePageChange={setActivePage}
             renderAnnotationLayer={renderAnnotationLayer}
           />
-        ) : viewMode === "html" && renderedContent ? (
+        ) : (viewMode === "html" || viewing) && displayContent ? (
           /* HTML / Web Version View: fixed A4 pages scaled to fit (design D1) */
           <div ref={htmlViewRef} className={`relative w-full rounded-2xl ${isDocument ? "bg-[#F1F5F9] p-2" : "bg-[#EFEBE3] dark:bg-[#161514] p-2 sm:p-6"} border border-[#E8E3D9] dark:border-[#33312E] print:p-0 print:border-0 print:bg-transparent`}>
             <div className="print:hidden sticky top-2 z-20 mb-3 flex justify-end">
@@ -941,16 +1086,16 @@ export function NoteReader({
               </div>
             </div>
             <HtmlSandboxedViewer
-              html={renderedContent}
+              html={displayContent}
               paged
               zoom={htmlZoom}
-              fieldsKey={formFieldsKey(note.id)}
+              fieldsKey={viewing ? undefined : formFieldsKey(note.id)}
               onLayout={({ pageCount }) =>
-                setPageCountByLayout((prev) =>
+                !viewing && setPageCountByLayout((prev) =>
                   prev[annotationLayout] === pageCount ? prev : { ...prev, [annotationLayout]: pageCount },
                 )
               }
-              renderPageOverlay={(pageIndex, { scale, pageWidth, pageHeight }) => (
+              renderPageOverlay={viewing ? undefined : (pageIndex, { scale, pageWidth, pageHeight }) => (
                 <div
                   className="pointer-events-none absolute inset-0"
                   onPointerDownCapture={(e) => {
@@ -1030,26 +1175,36 @@ export function NoteReader({
  * note, so marks may no longer sit on the same text (task 6.3). Dismissed per
  * visit.
  */
-function OlderVersionNotice({ revisionIds, currentVersion }: { revisionIds: string[]; currentVersion: number | null }) {
-  const [versions, setVersions] = useState<number[] | null>(null);
+function OlderVersionNotice({
+  revisionIds,
+  currentVersion,
+  onView,
+}: {
+  revisionIds: string[];
+  currentVersion: number | null;
+  onView: (revisionId: string) => void;
+}) {
+  const [versions, setVersions] = useState<{ id: string; n: number }[] | null>(null);
   const [dismissed, setDismissed] = useState(false);
   useEffect(() => {
     let cancelled = false;
     void createClient()
       .from("revisions")
-      .select("version_number")
+      .select("id, version_number")
       .in("id", revisionIds)
       .then(({ data }) => {
         if (cancelled) return;
-        const nums = (data ?? []).map((r: { version_number: number | null }) => r.version_number).filter((n): n is number => typeof n === "number");
-        setVersions(nums.sort((a, b) => a - b));
+        const list = (data ?? [])
+          .filter((r: { version_number: number | null }) => typeof r.version_number === "number")
+          .map((r: { id: string; version_number: number }) => ({ id: r.id, n: r.version_number }));
+        setVersions(list.sort((a, b) => a.n - b.n));
       });
     return () => {
       cancelled = true;
     };
   }, [revisionIds]);
   if (dismissed || versions === null) return null;
-  const made = versions.length ? versions.map((v) => `v${v}`).join(", ") : "an earlier version";
+  const made = versions.length ? versions.map((v) => `v${v.n}`).join(", ") : "an earlier version";
   return (
     <div
       role="status"
@@ -1060,6 +1215,15 @@ function OlderVersionNotice({ revisionIds, currentVersion }: { revisionIds: stri
         Your annotations were made on {made}; the note has changed since
         {currentVersion ? ` (now v${currentVersion})` : ""}, so some marks may not line up with the text.
       </span>
+      {versions.length > 0 && (
+        <button
+          type="button"
+          onClick={() => onView(versions[0].id)}
+          className="shrink-0 font-medium underline underline-offset-2 cursor-pointer hover:opacity-80"
+        >
+          View v{versions[0].n}
+        </button>
+      )}
       <button
         type="button"
         onClick={() => setDismissed(true)}
@@ -1069,6 +1233,12 @@ function OlderVersionNotice({ revisionIds, currentVersion }: { revisionIds: stri
       </button>
     </div>
   );
+}
+
+/** A readable message from an Error or a Supabase error object. */
+function errorText(err: unknown, fallback: string): string {
+  const message = err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "";
+  return message || fallback;
 }
 
 /** One status for drawings and answers: problems first, then saving, then saved. */
