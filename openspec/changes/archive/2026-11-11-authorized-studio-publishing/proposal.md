@@ -15,13 +15,13 @@ Vi-Lekh previously allowed any authenticated user to edit notes or submit edit s
   - Super Admin sees all courses, can create new courses, manage course collaborators (assign/remove course editors), delete courses, and edit all course content.
   - Course Editors see only the courses they are assigned to, and can add/reorder modules, add/reorder notes, and edit notes directly.
 - **Super Admin-Only Course Creation**:
-  - Course creation is strictly restricted to the Super Admin (`jatinkumar79911@gmail.com`). Course editors can manage modules and notes within their assigned courses, but cannot create new courses.
+  - Course creation is strictly restricted to the Super Admin (`admin@vilekh.local`). Course editors can manage modules and notes within their assigned courses, but cannot create new courses.
 - **Removal of Community Suggestion & Review Workflow (**BREAKING**)**:
   - The `/reviews` page and review queue are removed.
   - Community edit suggestions are eliminated. Non-editor users cannot propose revisions or edit notes.
   - Direct live publishing: When an authorized editor or Super Admin updates a note in the editor, changes are saved and published directly to live without going through a proposal or review queue.
 - **Access Control Updates**:
-  - Super Admin identified by fixed email `jatinkumar79911@gmail.com`.
+  - Super Admin identified by fixed email `admin@vilekh.local`.
   - Scoped course permissions via `course_members` (`role = 'editor' | 'admin'`).
   - Standard authenticated users default to pure read access with no editor or reviewer privileges.
 

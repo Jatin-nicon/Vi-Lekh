@@ -1,0 +1,151 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  CORE_TEAM
+  CONTRIBUTOR
+}
+
+enum CourseRole {
+  ADMIN
+  EDITOR
+  CONTRIBUTOR
+  VIEWER
+}
+
+enum RevisionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  DIRECT_PUBLISH
+}
+
+model Profile {
+  id          String            @id
+  username    String            @unique
+  displayName String            @map("display_name")
+  avatarUrl   String?           @map("avatar_url")
+  role        UserRole          @default(CONTRIBUTOR)
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+
+  createdCourses Course[]       @relation("CourseCreator")
+  authoredNotes  Note[]         @relation("NoteAuthor")
+  revisions      Revision[]     @relation("RevisionAuthor")
+  reviews        Revision[]     @relation("RevisionReviewer")
+  comments       RevisionComment[]
+  memberships    CourseMember[]
+
+  @@map("profiles")
+}
+
+model Course {
+  id          String         @id @default(uuid())
+  slug        String         @unique
+  title       String
+  description String
+  icon        String?
+  domain      String?
+  createdBy   String?        @map("created_by")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  creator     Profile?       @relation("CourseCreator", fields: [createdBy], references: [id], onDelete: SetNull)
+  modules     Module[]
+  notes       Note[]
+  members     CourseMember[]
+
+  @@map("courses")
+}
+
+model Module {
+  id         String   @id @default(uuid())
+  courseId   String   @map("course_id")
+  title      String
+  slug       String
+  orderIndex Int      @map("order_index")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  notes      Note[]
+
+  @@unique([courseId, slug])
+  @@map("modules")
+}
+
+model Note {
+  id                String     @id @default(uuid())
+  courseId          String     @map("course_id")
+  moduleId          String?    @map("module_id")
+  slug              String
+  title             String
+  currentRevisionId String?    @map("current_revision_id")
+  createdBy         String     @map("created_by")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+
+  course            Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  module            Module?    @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  author            Profile    @relation("NoteAuthor", fields: [createdBy], references: [id], onDelete: Cascade)
+  revisions         Revision[] @relation("NoteRevisions")
+
+  @@unique([courseId, slug])
+  @@map("notes")
+}
+
+model Revision {
+  id             String         @id @default(uuid())
+  noteId         String         @map("note_id")
+  authorId       String         @map("author_id")
+  baseRevisionId String?        @map("base_revision_id")
+  blocks         Json           @default("[]")
+  changeSummary  String         @default("") @map("change_summary")
+  status         RevisionStatus @default(PENDING)
+  reviewerId     String?        @map("reviewer_id")
+  reviewerNotes  String?        @map("reviewer_notes")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  note           Note           @relation("NoteRevisions", fields: [noteId], references: [id], onDelete: Cascade)
+  author         Profile        @relation("RevisionAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  reviewer       Profile?       @relation("RevisionReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  comments       RevisionComment[]
+
+  @@map("revisions")
+}
+
+model RevisionComment {
+  id         String   @id @default(uuid())
+  revisionId String   @map("revision_id")
+  authorId   String   @map("author_id")
+  blockId    String?  @map("block_id")
+  comment    String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  revision   Revision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  author     Profile  @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@map("revision_comments")
+}
+
+model CourseMember {
+  id        String     @id @default(uuid())
+  courseId  String     @map("course_id")
+  userId    String     @map("user_id")
+  role      CourseRole @default(VIEWER)
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  course    Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  profile   Profile    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, userId])
+  @@map("course_members")
+}

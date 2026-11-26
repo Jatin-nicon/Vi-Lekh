@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useAuth } from "@/lib/auth/auth-context";
-import { X, AlertCircle, Sparkles } from "lucide-react";
+import { X, AlertCircle, Sparkles, ShieldCheck } from "lucide-react";
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -11,7 +11,7 @@ interface AuthModalProps {
 }
 
 export function AuthModal({ isOpen, onClose }: AuthModalProps) {
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, signInWithEmulatorUser, isEmulator } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -131,6 +131,35 @@ export function AuthModal({ isOpen, onClose }: AuthModalProps) {
             <span>{loading ? "Connecting to Google..." : "Continue with Google"}</span>
           </button>
         </div>
+
+        {/* Emulator Quick-Login Helpers */}
+        {isEmulator && (
+          <div className="mt-4 pt-4 border-t border-[#E8E3D9] dark:border-[#33312E] space-y-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#A85D44] dark:text-[#C4785E] block text-center">
+              Local Emulator Quick Access
+            </span>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={async () => {
+                setError(null);
+                setLoading(true);
+                try {
+                  await signInWithEmulatorUser("admin@vilekh.local", "password123");
+                  onClose();
+                } catch (err: unknown) {
+                  setError(err instanceof Error ? err.message : "Failed to sign in as Super Admin");
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-[#A85D44]/10 hover:bg-[#A85D44]/20 border border-[#A85D44]/30 text-xs font-semibold text-[#A85D44] dark:text-[#D1886E] transition-colors disabled:opacity-50"
+            >
+              <ShieldCheck className="w-4 h-4 text-[#A85D44] dark:text-[#D1886E]" />
+              <span>Sign In as Super Admin (admin@vilekh.local)</span>
+            </button>
+          </div>
+        )}
 
         {/* Security / Privacy Footer */}
         <div className="mt-6 pt-4 border-t border-[#E8E3D9]/60 dark:border-[#33312E] text-center text-[11px] text-[#757069] dark:text-[#948F86]">

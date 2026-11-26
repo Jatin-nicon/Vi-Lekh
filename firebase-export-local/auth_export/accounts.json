@@ -1,0 +1,61 @@
+{
+  "kind": "identitytoolkit#DownloadAccountResponse",
+  "users": [
+    {
+      "localId": "superadmin-vilekh",
+      "displayName": "Vi-Lekh Super Admin",
+      "emailVerified": true,
+      "email": "admin@vilekh.local",
+      "salt": "fakeSalt9O9esgcbdhLPlWkmZf1c",
+      "passwordHash": "fakeHash:salt=fakeSalt9O9esgcbdhLPlWkmZf1c:password=password123",
+      "passwordUpdatedAt": 1795692701315,
+      "validSince": "1795692701",
+      "createdAt": "1795692701315",
+      "lastLoginAt": "1795692701315",
+      "providerUserInfo": [
+        {
+          "providerId": "google.com",
+          "rawId": "admin@vilekh.local",
+          "federatedId": "admin@vilekh.local",
+          "email": "admin@vilekh.local",
+          "displayName": "Vi-Lekh Super Admin"
+        },
+        {
+          "providerId": "password",
+          "rawId": "admin@vilekh.local",
+          "federatedId": "admin@vilekh.local",
+          "email": "admin@vilekh.local",
+          "displayName": "Vi-Lekh Super Admin"
+        }
+      ]
+    },
+    {
+      "localId": "contributor-demo",
+      "displayName": "Demo Contributor",
+      "emailVerified": true,
+      "email": "contributor@vilekh.local",
+      "salt": "fakeSaltContributor999888777",
+      "passwordHash": "fakeHash:salt=fakeSaltContributor999888777:password=password123",
+      "passwordUpdatedAt": 1795692701315,
+      "validSince": "1795692701",
+      "createdAt": "1795692701315",
+      "lastLoginAt": "1795692701315",
+      "providerUserInfo": [
+        {
+          "providerId": "google.com",
+          "rawId": "contributor@vilekh.local",
+          "federatedId": "contributor@vilekh.local",
+          "email": "contributor@vilekh.local",
+          "displayName": "Demo Contributor"
+        },
+        {
+          "providerId": "password",
+          "rawId": "contributor@vilekh.local",
+          "federatedId": "contributor@vilekh.local",
+          "email": "contributor@vilekh.local",
+          "displayName": "Demo Contributor"
+        }
+      ]
+    }
+  ]
+}

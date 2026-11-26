@@ -3,17 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently -k -p \"[{name}]\" -n \"EMULATOR,SERVER,NEXT\" -c \"yellow.bold,magenta.bold,cyan.bold\" \"npm run emulators\" \"npm run dev:server\" \"npm run dev:next\"",
+    "dev:all": "concurrently -k -p \"[{name}]\" -n \"EMULATOR,SERVER,NEXT\" -c \"yellow.bold,magenta.bold,cyan.bold\" \"npm run emulators\" \"npm run dev:server\" \"npm run dev:next\"",
+    "dev:next": "next dev",
+    "dev:server": "npm --prefix server run start:dev",
+    "build:server": "npm --prefix server run build",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "emulators": "firebase emulators:start --project demo-vilekh --only auth --import ./firebase-export-local --export-on-exit",
+    "emu": "firebase emulators:start --project demo-vilekh --only auth --import ./firebase-export-local --export-on-exit",
+    "emu:export": "firebase emulators:export ./firebase-export-local --project demo-vilekh",
+    "emu:import": "firebase emulators:start --import ./firebase-export-local --export-on-exit --project demo-vilekh"
   },
   "dependencies": {
     "@blocknote/core": "^0.57.0",
     "@blocknote/mantine": "^0.57.0",
     "@blocknote/react": "^0.57.0",
-    "@supabase/ssr": "^0.12.7",
-    "@supabase/supabase-js": "^2.119.0",
     "@tailwindcss/typography": "^0.5.20",
     "@types/prismjs": "^1.26.6",
     "class-variance-authority": "^0.7.1",
@@ -29,13 +38,20 @@
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
+    "@testing-library/jest-dom": "^8.0.0",
+    "@testing-library/react": "^16.3.3",
     "@types/katex": "^0.16.8",
-    "@types/node": "^20",
+    "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.3.0",
+    "concurrently": "^9.1.2",
     "eslint": "^9",
     "eslint-config-next": "16.4.5",
+    "jsdom": "^29.1.1",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.2"
   }
 }

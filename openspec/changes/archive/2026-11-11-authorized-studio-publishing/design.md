@@ -7,7 +7,7 @@ Vi-Lekh is a full-stack Next.js (App Router) application with Tailwind CSS and S
 To position Vi-Lekh as an authoritative knowledge repository, this model is being replaced with an authorized Creator Studio (`/studio`) and direct live publishing.
 
 Key existing foundations in the codebase:
-- `SUPER_ADMIN_EMAIL`: Defined as `jatinkumar79911@gmail.com`.
+- `SUPER_ADMIN_EMAIL`: Defined as `admin@vilekh.local`.
 - `course_members` table: Links `course_id`, `user_id`, and `role` (`'admin' | 'editor'`).
 - `notes-service.ts`: Houses Supabase operations for courses, modules, notes, and course memberships.
 
@@ -16,7 +16,7 @@ Key existing foundations in the codebase:
 **Goals:**
 - Provide a pure, distraction-free reading experience across public catalog (`/`) and reader (`/notes`).
 - Establish a single, centralized management surface (`/studio`) accessible exclusively to authorized editors.
-- Restrict course creation strictly to the Super Admin (`jatinkumar79911@gmail.com`).
+- Restrict course creation strictly to the Super Admin (`admin@vilekh.local`).
 - Enable the Super Admin to delegate course editing privileges to specific users via email through `course_members`.
 - Allow assigned Course Editors to manage syllabus modules, notes, and direct edits for their assigned courses.
 - Save and publish note edits immediately live without review queue intermediation.
@@ -61,7 +61,7 @@ Key existing foundations in the codebase:
 **Approach:**
 - Upon loading `/edit?note=<id>`, fetch note metadata to determine its `course_id`.
 - Verify user authorization:
-  - User is Super Admin (`user.email === 'jatinkumar79911@gmail.com'`), OR
+  - User is Super Admin (`user.email === 'admin@vilekh.local'`), OR
   - User is an active editor for that course in `course_members`.
 - If unauthorized, render a clean error state or redirect back to `/notes?course=<courseId>&note=<noteId>`.
 

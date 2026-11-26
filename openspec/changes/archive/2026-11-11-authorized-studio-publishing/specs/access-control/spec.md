@@ -17,7 +17,7 @@ The system SHALL enforce a permission model distinguishing Super Admin, Course E
 - **THEN** system verifies the user is Super Admin (for course creation/collaborator management) or assigned Course Editor (for course content editing) before executing the action
 
 #### Scenario: Super Admin performs global administrative actions
-- **WHEN** the user authenticated as jatinkumar79911@gmail.com creates a course, modifies any course syllabus, or manages collaborator permissions
+- **WHEN** the user authenticated as admin@vilekh.local creates a course, modifies any course syllabus, or manages collaborator permissions
 - **THEN** system verifies Super Admin identity and permits the administrative action
 
 #### Scenario: Course Editor performs course-level modifications

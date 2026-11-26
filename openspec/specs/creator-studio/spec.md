@@ -9,7 +9,7 @@ Provides a dedicated management workspace (/studio) for the Super Admin and auth
 The system SHALL provide an authorized Creator Studio workspace (/studio) displaying courses filtered according to the authenticated user's permissions.
 
 #### Scenario: Super Admin accesses Studio
-- **WHEN** the Super Admin (jatinkumar79911@gmail.com) navigates to /studio
+- **WHEN** the Super Admin (admin@vilekh.local) navigates to /studio
 - **THEN** the system displays all courses in the platform with course creation and management controls
 
 #### Scenario: Course Editor accesses Studio

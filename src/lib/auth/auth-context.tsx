@@ -4,16 +4,16 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { 
   onAuthStateChanged, 
   signInWithPopup, 
+  signInWithEmailAndPassword,
   signOut as firebaseSignOut,
   type User as FirebaseUser 
 } from "firebase/auth";
-import { auth, googleProvider } from "@/lib/firebase/config";
+import { auth, googleProvider, isEmulator } from "@/lib/firebase/config";
 import { notesService } from "@/lib/data/notes-service";
-import { createClient } from "@/lib/supabase/client";
-import type { Profile, UserRole } from "@/lib/supabase/types";
+import type { Profile, UserRole } from "@/lib/types/notes";
 
 export const SUPER_ADMIN_EMAIL = (
-  process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL || "jatinkumar79911@gmail.com"
+  process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL || "admin@vilekh.local"
 ).toLowerCase();
 
 interface AuthContextType {
@@ -22,7 +22,9 @@ interface AuthContextType {
   isLoading: boolean;
   isSuperAdmin: boolean;
   isCoreTeam: boolean;
+  isEmulator: boolean;
   signInWithGoogle: () => Promise<void>;
+  signInWithEmulatorUser: (email?: string, password?: string) => Promise<void>;
   signOut: () => Promise<void>;
   simulateRole: (role: UserRole) => void;
 }
@@ -38,40 +40,26 @@ async function resolveUserProfile(firebaseUser: FirebaseUser): Promise<Profile> 
     localStorage.removeItem("vilekh-user-role");
   }
 
-  // Ensure user profile exists in Supabase
-  await notesService.syncUserProfile(firebaseUser).catch(() => {});
-
-  // Fetch actual role and profile metadata from Supabase
-  const supabase = createClient();
-  let dbRole: UserRole = "contributor";
-  let dbUsername = "";
-  let dbDisplayName = "";
-  let dbAvatar: string | undefined;
-
+  // Ensure user profile exists in database
   try {
-    const { data } = await supabase
-      .from("profiles")
-      .select("role, username, display_name, avatar_url")
-      .eq("id", firebaseUser.uid)
-      .maybeSingle();
-
-    if (data) {
-      if (data.role) dbRole = data.role as UserRole;
-      if (data.username) dbUsername = data.username;
-      if (data.display_name) dbDisplayName = data.display_name;
-      if (data.avatar_url) dbAvatar = data.avatar_url;
+    const synced = await notesService.syncUserProfile(firebaseUser);
+    if (synced) {
+      return {
+        ...synced,
+        role: isMaster ? "super_admin" : synced.role,
+      };
     }
   } catch {
     // Non-blocking fallback
   }
 
-  const assignedRole: UserRole = isMaster ? "super_admin" : dbRole;
+  const assignedRole: UserRole = isMaster ? "super_admin" : "contributor";
 
   return {
     id: firebaseUser.uid,
-    username: dbUsername || firebaseUser.email?.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "_") || "user",
-    display_name: dbDisplayName || firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "User",
-    avatar_url: dbAvatar || firebaseUser.photoURL || undefined,
+    username: firebaseUser.email?.split("@")[0].toLowerCase().replace(/[^a-z0-9]/g, "_") || "user",
+    display_name: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "User",
+    avatar_url: firebaseUser.photoURL || undefined,
     role: assignedRole,
     created_at: firebaseUser.metadata.creationTime || new Date().toISOString(),
     updated_at: new Date().toISOString(),
@@ -119,6 +107,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const signInWithEmulatorUser = async (
+    email: string = SUPER_ADMIN_EMAIL,
+    password: string = "password123"
+  ) => {
+    try {
+      setIsLoading(true);
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      const firebaseUser = result.user;
+      setUser(firebaseUser);
+      const resolved = await resolveUserProfile(firebaseUser);
+      setProfile(resolved);
+    } catch (err: unknown) {
+      console.error("Firebase Emulator Auth error:", err);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const signOut = async () => {
     await firebaseSignOut(auth);
     setUser(null);
@@ -151,7 +158,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         isSuperAdmin,
         isCoreTeam,
+        isEmulator,
         signInWithGoogle,
+        signInWithEmulatorUser,
         signOut,
         simulateRole,
       }}

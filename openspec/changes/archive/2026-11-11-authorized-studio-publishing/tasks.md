@@ -3,7 +3,7 @@
 ## 1. Data Layer & Access Helpers
 
 - [x] 1.1 Add helper functions in `src/lib/data/notes-service.ts` to fetch editable courses for a user, look up profiles by email, assign/revoke course editors in `course_members`, and update live notes directly without revisions; verify via TypeScript compilation.
-- [x] 1.2 Implement access authorization utilities in `src/lib/auth/roles.ts` to determine Super Admin (`jatinkumar79911@gmail.com`), course editor status, and Studio access eligibility; verify unit exports and type signatures.
+- [x] 1.2 Implement access authorization utilities in `src/lib/auth/roles.ts` to determine Super Admin (`admin@vilekh.local`), course editor status, and Studio access eligibility; verify unit exports and type signatures.
 
 ## 2. Public Surface Cleanup & Review Deprecation
 
