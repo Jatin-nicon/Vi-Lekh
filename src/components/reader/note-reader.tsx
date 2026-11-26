@@ -18,10 +18,13 @@ import {
 import { PdfViewer } from "@/components/pdf/pdf-viewer";
 import { DOCUMENT_WIDTH, isHtmlDocument } from "@/lib/layout/document-html";
 import { useFullscreen } from "./use-fullscreen";
+import { useAnnotationSync, type SyncStatus } from "./use-annotation-sync";
+import { useOptionalAuth } from "@/lib/auth/auth-context";
+import type { PageAnnotations } from "@/lib/annotations/annotation-sync";
 import { fieldAtPoint, formFieldsKey } from "@/lib/layout/form-fields";
 import { exportAnnotatedPdf } from "@/lib/pdf/pdf-export";
 import { printPagedHtml } from "@/lib/pdf/html-print-export";
-import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe, Maximize, Minimize, ZoomIn, ZoomOut } from "lucide-react";
+import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe, Maximize, Minimize, ZoomIn, ZoomOut, Cloud, CloudOff, Loader2 } from "lucide-react";
 import {
   ANNOTATION_KINDS,
   annotationStorageKey,
@@ -38,6 +41,8 @@ interface NoteReaderProps {
   onProposeEdit?: () => void;
   contributors?: Profile[];
   defaultPdfSource?: string | File | ArrayBuffer;
+  /** Dev harness only: the user to sync annotations for, instead of the signed-in one. */
+  syncUserId?: string | null;
 }
 
 export function NoteReader({
@@ -45,6 +50,7 @@ export function NoteReader({
   revision,
   courseTitle = "Course Notes",
   defaultPdfSource,
+  syncUserId,
 }: NoteReaderProps) {
   const blocks = revision?.blocks || [];
 
@@ -188,6 +194,24 @@ export function NoteReader({
     setCanUndo(false);
     setCanRedo(false);
   }
+
+  // Account sync (design D10): device copy first, account copy 2s after changes.
+  const auth = useOptionalAuth();
+  const applySyncedPage = useCallback((page: number, data: PageAnnotations) => {
+    setPageStrokes((prev) => ({ ...prev, [page]: data.strokes }));
+    setPageShapes((prev) => ({ ...prev, [page]: data.shapes }));
+    setPageTextBoxes((prev) => ({ ...prev, [page]: data.textBoxes }));
+  }, []);
+  const { status: syncStatus, retry: retrySync } = useAnnotationSync({
+    noteId: note.id,
+    layout: annotationLayout,
+    revisionId: revision?.id,
+    userId: syncUserId !== undefined ? syncUserId : auth?.isLoading ? null : auth?.user?.uid ?? null,
+    strokes: pageStrokes,
+    shapes: pageShapes,
+    textBoxes: pageTextBoxes,
+    applyPage: applySyncedPage,
+  });
 
   // Persists one page of the current layout to localStorage.
   const persistPage = useCallback(
@@ -808,6 +832,7 @@ export function NoteReader({
           </div>
 
           <div className="flex items-center gap-3">
+            <SyncChip status={syncStatus} hasAnnotations={totalAnnotationCount > 0} onRetry={retrySync} />
             <span className="flex items-center gap-1.5" suppressHydrationWarning>
               <Calendar className="w-3.5 h-3.5" />
               Updated {formatDate(revision?.updated_at || note.updated_at)}
@@ -962,5 +987,37 @@ export function NoteReader({
         )}
       </div>
     </div>
+  );
+}
+
+/** Shows whether the reader's annotations are saved to their account. */
+function SyncChip({ status, hasAnnotations, onRetry }: { status: SyncStatus; hasAnnotations: boolean; onRetry: () => void }) {
+  if (status === "idle" || (!hasAnnotations && status !== "saving" && status !== "error")) return null;
+  const base = "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium";
+  if (status === "saving") {
+    return (
+      <span className={`${base} text-[#757069] dark:text-[#948F86]`} role="status">
+        <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+      </span>
+    );
+  }
+  if (status === "saved") {
+    return (
+      <span className={`${base} text-[#5D7063] dark:text-[#768D7D]`} role="status" title="Your annotations are saved to your account">
+        <Cloud className="w-3 h-3" /> Saved
+      </span>
+    );
+  }
+  const signedOut = status === "signed-out";
+  return (
+    <button
+      type="button"
+      onClick={signedOut ? undefined : onRetry}
+      className={`${base} bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 ${signedOut ? "cursor-default" : "cursor-pointer"}`}
+      title={signedOut ? "Saved in this browser only. Sign in to save your annotations to your account." : "Saving to your account failed. Click to try again."}
+      role="status"
+    >
+      <CloudOff className="w-3 h-3" /> Not synced
+    </button>
   );
 }
