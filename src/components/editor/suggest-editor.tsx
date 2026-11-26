@@ -3,8 +3,11 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, Send, Trash2, MessageSquareWarning, GitPullRequestDraft } from "lucide-react";
+import { ArrowLeft, Columns2, Loader2, Send, Trash2, MessageSquareWarning, GitPullRequestDraft } from "lucide-react";
 import { PageEditor } from "@/components/editor/page-editor";
+import { ReviewChanges } from "@/components/editor/review-changes";
+import { blocksToHtml } from "@/lib/editor/block-converter";
+import { getVersion } from "@/lib/data/versions";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/auth/user-menu";
 import type { Contributor } from "@/lib/editor/contribution-snippets";
@@ -45,6 +48,9 @@ export function SuggestEditor({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const [submitOpen, setSubmitOpen] = useState(false);
+  /** The before/after screen: before submitting, or just to look. */
+  const [review, setReview] = useState<"submit" | "look" | null>(null);
+  const [base, setBase] = useState<{ html: string; label: string } | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef({ id: "", html: "" });
@@ -63,6 +69,7 @@ export function SuggestEditor({
         setDraft(d);
         setHtml(d.html);
         latest.current = { id: d.id, html: d.html };
+        return loadBase(d.base_revision_id, currentRevisionId, currentHtml).then((b) => !cancelled && setBase(b));
       })
       .catch((err) => !cancelled && setLoadError(errorMessage(err, "Your draft could not be opened.")));
     return () => {
@@ -188,18 +195,46 @@ export function SuggestEditor({
               <Trash2 className="w-3.5 h-3.5" /> Discard draft
             </button>
           )}
+          <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
+            onClick={() => setReview("look")}
+            disabled={!base}
+            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-white dark:bg-[#181716] hover:border-[#2563EB] hover:text-[#2563EB] disabled:opacity-50 text-xs sm:text-sm font-medium cursor-pointer"
+          >
+            <Columns2 className="w-4 h-4" /> Review changes
+          </button>
+          <button
+            type="button"
+            disabled={!base}
             onClick={async () => {
               await flush();
-              setSubmitOpen(true);
+              setReview("submit");
             }}
             className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs sm:text-sm font-semibold shadow-sm cursor-pointer"
           >
             <Send className="w-4 h-4" /> Submit for review
           </button>
+          </div>
         </div>
       </main>
+
+      {review && base && (
+        <ReviewChanges
+          baseHtml={base.html}
+          draftHtml={html}
+          baseLabel={base.label}
+          onBack={() => setReview(null)}
+          onContinue={
+            review === "submit"
+              ? () => {
+                  setReview(null);
+                  setSubmitOpen(true);
+                }
+              : undefined
+          }
+        />
+      )}
 
       {submitOpen && (
         <SubmitDialog
@@ -210,6 +245,14 @@ export function SuggestEditor({
       )}
     </div>
   );
+}
+
+/** The version a draft started from: the current one, or an earlier published version. */
+async function loadBase(baseId: string | null, currentId: string, currentHtml: string): Promise<{ html: string; label: string }> {
+  if (!baseId || baseId === currentId) return { html: currentHtml, label: "current version" };
+  const v = await getVersion(baseId);
+  if (!v) return { html: currentHtml, label: "current version" };
+  return { html: blocksToHtml(v.blocks), label: v.version_number ? `version ${v.version_number}` : "earlier version" };
 }
 
 /** Summary and "include my annotations", then submit (task 9.4). */

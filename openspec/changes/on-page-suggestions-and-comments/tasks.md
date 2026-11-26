@@ -13,7 +13,7 @@
 - [x] 2.2 Make the Page view the only view in suggest mode (remove the code view and preview there), wired to the source splicing and the 2s autosave. Verify that suggest mode shows no code editor, that an edit is saved to the draft, and that the direct-publish editor still has its code view
 - [x] 2.3 Add the "Add after this" toolbar on the selected block (Case Study, My Experience, Findings, Paragraph, Image) using the existing snippets and image upload. Verify each insertion appears after the block, credits the contributor, and a non-image file shows an error
 - [x] 2.4 Add undo and redo of on-page edits as draft snapshots (capped at 100) with buttons and Ctrl+Z / Ctrl+Y. Verify undoing an insertion restores the previous draft exactly
-- [ ] 2.5 Add the "Review your changes" screen (Before and After side by side, linked scrolling, highlighted changed/added/removed blocks, tabs on narrow screens) shown before the submit dialog and from a "Review changes" action (D9). Verify with one edited paragraph, an inserted section, an unchanged draft, and a phone-width window
+- [x] 2.5 Add the "Review your changes" screen (Before and After side by side, linked scrolling, highlighted changed/added/removed blocks, tabs on narrow screens) shown before the submit dialog and from a "Review changes" action (D9). Verify with one edited paragraph, an inserted section, an unchanged draft, and a phone-width window
 
 ## 3. Comments database (D6)
 

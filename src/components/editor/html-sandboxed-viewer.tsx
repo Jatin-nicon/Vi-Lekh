@@ -54,6 +54,8 @@ interface HtmlSandboxedViewerProps {
   fieldsKey?: string;
   /** Turns on editing on the page (suggest mode, design D3). */
   editing?: PageEditing;
+  /** Receives the rendered note's content root after each render (null when it goes away), e.g. to mark changes. Paged mode. */
+  onContentRoot?: (root: HTMLElement | null) => void;
 }
 
 /** Callbacks for editing on the page; `root` is the note's content root in the shadow DOM. */
@@ -611,6 +613,7 @@ export function HtmlSandboxedViewer({
   renderPageOverlay,
   fieldsKey,
   editing,
+  onContentRoot,
 }: HtmlSandboxedViewerProps) {
   const outerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -645,6 +648,10 @@ export function HtmlSandboxedViewer({
   const isEditing = Boolean(editing);
   /** Block to reopen after the page re-renders (its path in the content). */
   const resumeRef = useRef<number[] | null>(null);
+  const onContentRootRef = useRef(onContentRoot);
+  useEffect(() => {
+    onContentRootRef.current = onContentRoot;
+  }, [onContentRoot]);
   const onLayoutRef = useRef(onLayout);
   useEffect(() => {
     onLayoutRef.current = onLayout;
@@ -730,6 +737,7 @@ export function HtmlSandboxedViewer({
 
     // Re-run after fonts, images and the KaTeX stylesheet load — never on resize.
     run();
+    onContentRootRef.current?.((isDocument ? flow.querySelector<HTMLElement>(".vl-doc") : flow) ?? flow);
     loadNoteFonts().then(schedule);
     const link = shadow.querySelector("link");
     link?.addEventListener("load", schedule);
@@ -743,6 +751,7 @@ export function HtmlSandboxedViewer({
       unbindFields();
       links.cleanup();
       stopEditing();
+      onContentRootRef.current?.(null);
       cancelAnimationFrame(frame);
       link?.removeEventListener("load", schedule);
       images.forEach((img) => img.removeEventListener("load", schedule));
