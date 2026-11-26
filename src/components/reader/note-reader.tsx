@@ -21,7 +21,8 @@ import { useFullscreen } from "./use-fullscreen";
 import { useAnnotationSync, type SyncStatus } from "./use-annotation-sync";
 import { useAnswerSync } from "./use-answer-sync";
 import { useOptionalAuth } from "@/lib/auth/auth-context";
-import type { PageAnnotations } from "@/lib/annotations/annotation-sync";
+import { contentHash, type PageAnnotations } from "@/lib/annotations/annotation-sync";
+import { createClient } from "@/lib/supabase/client";
 import { fieldAtPoint, formFieldsKey } from "@/lib/layout/form-fields";
 import { exportAnnotatedPdf } from "@/lib/pdf/pdf-export";
 import { printPagedHtml } from "@/lib/pdf/html-print-export";
@@ -205,10 +206,18 @@ export function NoteReader({
   }, []);
   const syncUser = syncUserId !== undefined ? syncUserId : auth?.isLoading ? null : auth?.user?.uid ?? null;
   const answers = useAnswerSync({ noteId: note.id, storageKey: formFieldsKey(note.id), userId: syncUser });
-  const { status: annotationSyncStatus, retry: retryAnnotationSync } = useAnnotationSync({
+  const [pageCountByLayout, setPageCountByLayout] = useState<Record<string, number>>({});
+  const noteHash = useMemo(() => contentHash(renderedContent || ""), [renderedContent]);
+  const {
+    status: annotationSyncStatus,
+    retry: retryAnnotationSync,
+    staleRevisionIds,
+  } = useAnnotationSync({
     noteId: note.id,
     layout: annotationLayout,
     revisionId: revision?.id,
+    pageCount: pageCountByLayout[annotationLayout] ?? null,
+    contentHash: annotationLayout === "pdf" ? null : noteHash,
     userId: syncUser,
     strokes: pageStrokes,
     shapes: pageShapes,
@@ -867,6 +876,14 @@ export function NoteReader({
           </div>
         </div>
 
+        {staleRevisionIds.length > 0 && (
+          <OlderVersionNotice
+            key={`${note.id}:${annotationLayout}:${staleRevisionIds.join()}`}
+            revisionIds={staleRevisionIds}
+            currentVersion={revision?.version_number ?? null}
+          />
+        )}
+
         {/* Informational banner when database has an expired blob: URL from a prior session */}
         {isStaleBlobUrl && (
           <div className="print:hidden mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300">
@@ -928,6 +945,11 @@ export function NoteReader({
               paged
               zoom={htmlZoom}
               fieldsKey={formFieldsKey(note.id)}
+              onLayout={({ pageCount }) =>
+                setPageCountByLayout((prev) =>
+                  prev[annotationLayout] === pageCount ? prev : { ...prev, [annotationLayout]: pageCount },
+                )
+              }
               renderPageOverlay={(pageIndex, { scale, pageWidth, pageHeight }) => (
                 <div
                   className="pointer-events-none absolute inset-0"
@@ -999,6 +1021,52 @@ export function NoteReader({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Tells the reader their annotations were made on an earlier version of the
+ * note, so marks may no longer sit on the same text (task 6.3). Dismissed per
+ * visit.
+ */
+function OlderVersionNotice({ revisionIds, currentVersion }: { revisionIds: string[]; currentVersion: number | null }) {
+  const [versions, setVersions] = useState<number[] | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void createClient()
+      .from("revisions")
+      .select("version_number")
+      .in("id", revisionIds)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const nums = (data ?? []).map((r: { version_number: number | null }) => r.version_number).filter((n): n is number => typeof n === "number");
+        setVersions(nums.sort((a, b) => a - b));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [revisionIds]);
+  if (dismissed || versions === null) return null;
+  const made = versions.length ? versions.map((v) => `v${v}`).join(", ") : "an earlier version";
+  return (
+    <div
+      role="status"
+      className="print:hidden mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-start gap-2 text-xs text-amber-800 dark:text-amber-300"
+    >
+      <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-px" />
+      <span className="flex-1">
+        Your annotations were made on {made}; the note has changed since
+        {currentVersion ? ` (now v${currentVersion})` : ""}, so some marks may not line up with the text.
+      </span>
+      <button
+        type="button"
+        onClick={() => setDismissed(true)}
+        className="shrink-0 font-medium underline underline-offset-2 cursor-pointer hover:opacity-80"
+      >
+        Dismiss
+      </button>
     </div>
   );
 }
