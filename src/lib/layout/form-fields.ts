@@ -5,6 +5,8 @@
  * copies the markup, includes them.
  */
 
+import { FIELDS_CHANGED_EVENT, FIELDS_UPDATED_EVENT, timesKey } from "./answer-sync";
+
 type Field = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
 type Values = Record<string, string | boolean>;
 
@@ -82,17 +84,42 @@ export function bindFormFields(root: HTMLElement, storageKey?: string): () => vo
     if (!key || !storageKey) return;
     // Re-read, so another tab's answers to other fields aren't overwritten.
     const current = load(storageKey);
+    const times = load(timesKey(storageKey)) as Record<string, string>;
+    const now = new Date().toISOString();
+    let changed = false;
     const group = isToggle(field) && field.type === "radio" ? fields.filter((f) => isInput(f) && f.type === "radio" && f.name === (field as HTMLInputElement).name) : [field];
     for (const f of group) {
       const k = keys.get(f);
       if (!k) continue;
-      current[k] = isToggle(f) ? f.checked : f.value;
+      const value = isToggle(f) ? f.checked : f.value;
       mirror(f);
+      // "change" also fires on blur; only a new value is an edit.
+      if (current[k] === value || (current[k] === undefined && (value === "" || value === false))) continue;
+      current[k] = value;
+      times[k] = now;
+      changed = true;
     }
+    if (!changed) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(current));
+      localStorage.setItem(timesKey(storageKey), JSON.stringify(times));
     } catch {
       // Ignore storage errors (e.g. quota)
+    }
+    window.dispatchEvent(new CustomEvent(FIELDS_CHANGED_EVENT, { detail: { storageKey } }));
+  };
+  // Answers merged in from the account: show them, except in the field being typed in.
+  const onUpdated = (e: Event) => {
+    if (!storageKey || (e as CustomEvent<{ storageKey: string }>).detail?.storageKey !== storageKey) return;
+    const latest = load(storageKey);
+    const active = (root.getRootNode() as Document | ShadowRoot).activeElement;
+    for (const [field, key] of keys) {
+      if (field === active || !(key in latest)) continue;
+      const v = latest[key];
+      if (isToggle(field)) {
+        if (typeof v === "boolean") field.checked = v;
+      } else if (typeof v === "string") field.value = v;
+      mirror(field);
     }
   };
   // Outside a shadow root the event target is the host, so the reader's
@@ -106,7 +133,9 @@ export function bindFormFields(root: HTMLElement, storageKey?: string): () => vo
   root.addEventListener("change", onEdit);
   root.addEventListener("keydown", onKey);
   root.addEventListener("submit", onSubmit);
+  window.addEventListener(FIELDS_UPDATED_EVENT, onUpdated);
   return () => {
+    window.removeEventListener(FIELDS_UPDATED_EVENT, onUpdated);
     root.removeEventListener("input", onEdit);
     root.removeEventListener("change", onEdit);
     root.removeEventListener("keydown", onKey);

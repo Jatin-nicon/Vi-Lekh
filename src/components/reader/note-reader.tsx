@@ -19,6 +19,7 @@ import { PdfViewer } from "@/components/pdf/pdf-viewer";
 import { DOCUMENT_WIDTH, isHtmlDocument } from "@/lib/layout/document-html";
 import { useFullscreen } from "./use-fullscreen";
 import { useAnnotationSync, type SyncStatus } from "./use-annotation-sync";
+import { useAnswerSync } from "./use-answer-sync";
 import { useOptionalAuth } from "@/lib/auth/auth-context";
 import type { PageAnnotations } from "@/lib/annotations/annotation-sync";
 import { fieldAtPoint, formFieldsKey } from "@/lib/layout/form-fields";
@@ -202,11 +203,13 @@ export function NoteReader({
     setPageShapes((prev) => ({ ...prev, [page]: data.shapes }));
     setPageTextBoxes((prev) => ({ ...prev, [page]: data.textBoxes }));
   }, []);
-  const { status: syncStatus, retry: retrySync } = useAnnotationSync({
+  const syncUser = syncUserId !== undefined ? syncUserId : auth?.isLoading ? null : auth?.user?.uid ?? null;
+  const answers = useAnswerSync({ noteId: note.id, storageKey: formFieldsKey(note.id), userId: syncUser });
+  const { status: annotationSyncStatus, retry: retryAnnotationSync } = useAnnotationSync({
     noteId: note.id,
     layout: annotationLayout,
     revisionId: revision?.id,
-    userId: syncUserId !== undefined ? syncUserId : auth?.isLoading ? null : auth?.user?.uid ?? null,
+    userId: syncUser,
     strokes: pageStrokes,
     shapes: pageShapes,
     textBoxes: pageTextBoxes,
@@ -832,7 +835,17 @@ export function NoteReader({
           </div>
 
           <div className="flex items-center gap-3">
-            <SyncChip status={syncStatus} hasAnnotations={totalAnnotationCount > 0} onRetry={retrySync} />
+            <SyncChip
+              status={combineSyncStatus(
+                totalAnnotationCount > 0 ? annotationSyncStatus : "idle",
+                answers.hasData ? answers.status : "idle",
+              )}
+              hasAnnotations={totalAnnotationCount > 0 || answers.hasData}
+              onRetry={() => {
+                retryAnnotationSync();
+                answers.retry();
+              }}
+            />
             <span className="flex items-center gap-1.5" suppressHydrationWarning>
               <Calendar className="w-3.5 h-3.5" />
               Updated {formatDate(revision?.updated_at || note.updated_at)}
@@ -990,7 +1003,13 @@ export function NoteReader({
   );
 }
 
-/** Shows whether the reader's annotations are saved to their account. */
+/** One status for drawings and answers: problems first, then saving, then saved. */
+function combineSyncStatus(...all: SyncStatus[]): SyncStatus {
+  for (const s of ["error", "signed-out", "saving", "saved"] as SyncStatus[]) if (all.includes(s)) return s;
+  return "idle";
+}
+
+/** Shows whether the reader's annotations and answers are saved to their account. */
 function SyncChip({ status, hasAnnotations, onRetry }: { status: SyncStatus; hasAnnotations: boolean; onRetry: () => void }) {
   if (status === "idle" || (!hasAnnotations && status !== "saving" && status !== "error")) return null;
   const base = "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium";
@@ -1003,7 +1022,7 @@ function SyncChip({ status, hasAnnotations, onRetry }: { status: SyncStatus; has
   }
   if (status === "saved") {
     return (
-      <span className={`${base} text-[#5D7063] dark:text-[#768D7D]`} role="status" title="Your annotations are saved to your account">
+      <span className={`${base} text-[#5D7063] dark:text-[#768D7D]`} role="status" title="Your annotations and answers are saved to your account">
         <Cloud className="w-3 h-3" /> Saved
       </span>
     );
@@ -1014,7 +1033,7 @@ function SyncChip({ status, hasAnnotations, onRetry }: { status: SyncStatus; has
       type="button"
       onClick={signedOut ? undefined : onRetry}
       className={`${base} bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 ${signedOut ? "cursor-default" : "cursor-pointer"}`}
-      title={signedOut ? "Saved in this browser only. Sign in to save your annotations to your account." : "Saving to your account failed. Click to try again."}
+      title={signedOut ? "Saved in this browser only. Sign in to save your annotations and answers to your account." : "Saving to your account failed. Click to try again."}
       role="status"
     >
       <CloudOff className="w-3 h-3" /> Not synced

@@ -62,7 +62,22 @@ describe("bindFormFields", () => {
     expect((b.querySelector("[type=password]") as HTMLInputElement).disabled).toBe(true);
   });
 
-  it("stops typing from reaching page shortcuts", () => {
+  it("does not treat leaving a field as an edit", () => {
+    const a = mount();
+    bindFormFields(a, "n1");
+    const seen = vi.fn();
+    window.addEventListener("vilekh-fields-changed", seen);
+    const name = a.querySelector("[data-k=name]")!;
+    type(name, "Asha");
+    const t1 = JSON.parse(localStorage.getItem("n1:t")!)["k:name"];
+    name.dispatchEvent(new Event("change", { bubbles: true }));
+    a.querySelector("textarea")!.dispatchEvent(new Event("change", { bubbles: true }));
+    window.removeEventListener("vilekh-fields-changed", seen);
+    expect(seen).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(localStorage.getItem("n1:t")!)).toEqual({ "k:name": t1 });
+  });
+
+    it("stops typing from reaching page shortcuts", () => {
     const a = mount();
     bindFormFields(a, "n1");
     const seen = vi.fn();
