@@ -32,7 +32,7 @@
 ## 5. Release
 
 - [ ] 5.1 Run the unit tests, typecheck and build, check the suggest Page view and comments end to end in Chrome against staging data, and record what was verified with real accounts in this file
-- [ ] 5.2 Update `docs/` with a short guide for contributors (editing on the page, comments) and verify it renders
+- [x] 5.2 Update `docs/` with a short guide for contributors (editing on the page, comments) and verify it renders
 
 ## Workflow follow-up
 
