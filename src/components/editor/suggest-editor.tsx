@@ -12,7 +12,6 @@ import { blocksToHtml } from "@/lib/editor/block-converter";
 import { getVersion } from "@/lib/data/versions";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/auth/user-menu";
-import type { Contributor } from "@/lib/editor/contribution-snippets";
 import type { Note } from "@/lib/supabase/types";
 import {
   SUMMARY_MAX,
@@ -36,13 +35,11 @@ export function SuggestEditor({
   currentRevisionId,
   currentHtml,
   userId,
-  contributor,
 }: {
   note: Note;
   currentRevisionId: string;
   currentHtml: string;
   userId: string;
-  contributor: Contributor | null;
 }) {
   const router = useRouter();
   const [draft, setDraft] = useState<Suggestion | null>(null);
@@ -182,7 +179,6 @@ export function SuggestEditor({
         <PageEditor
           html={html}
           onChange={onChange}
-          contributor={contributor}
           onUneditable={commentInstead}
         />
         {commentOn && (

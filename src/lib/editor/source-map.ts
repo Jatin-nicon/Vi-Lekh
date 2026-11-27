@@ -173,3 +173,38 @@ export function setStartTagStyle(html: string, el: P5Element, property: string, 
   const at = html[tagEnd - 2] === "/" ? tagEnd - 2 : tagEnd - 1;
   return html.slice(0, at) + ` style="${escapeAttr(style)}"` + html.slice(at);
 }
+
+/**
+ * Inserts markup after the last element of the note's content (the body for
+ * documents, the fragment root otherwise), or as its only content when it has
+ * none (design D4). Returns the new draft and the new element's path.
+ */
+export function insertAtEnd(tree: SourceTree, markup: string): { html: string; path: number[] } {
+  const kids = sourceChildren(tree.root, tree.isDocument);
+  const last = kids[kids.length - 1];
+  if (last) return { html: insertAfter(tree.html, last, markup), path: [kids.length] };
+  const html = tree.html;
+  const clean = markup.replace(/\s+$/, "");
+  const loc = (tree.root as P5Element).sourceCodeLocation;
+  const at = tree.isDocument ? (loc?.startTag?.endOffset ?? loc?.endTag?.startOffset ?? html.length) : html.length;
+  return { html: html.slice(0, at) + "\n" + clean + html.slice(at), path: [0] };
+}
+
+/** Tags the block type menu can switch between (design D12). */
+export const RENAMABLE = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6"]);
+
+/**
+ * Changes an element's tag name in its start and end tags, keeping its
+ * attributes and content as written (design D12). Refuses elements outside
+ * {@link RENAMABLE} and elements whose end tag is implied.
+ */
+export function renameElement(html: string, el: P5Element, tagName: string): string {
+  const loc = el.sourceCodeLocation;
+  const to = tagName.toLowerCase();
+  if (!RENAMABLE.has(el.tagName) || !RENAMABLE.has(to)) throw new Error("Only paragraphs and headings can change type.");
+  if (!loc?.startTag || !loc.endTag) throw new Error("This part can't change type on the page.");
+  const n = el.tagName.length;
+  const end = loc.endTag.startOffset + 2; // after "</"
+  const start = loc.startTag.startOffset + 1; // after "<"
+  return html.slice(0, start) + to + html.slice(start + n, end) + to + html.slice(end + n);
+}

@@ -17,7 +17,7 @@ See proposal.md for motivation and the specs for required behavior. What shapes 
 - Comments that keep working after the note changes, by quoting the text they are about.
 
 **Non-Goals:**
-- Moving blocks, changing a block's kind (paragraph to heading or list), font sizes or fonts, or the lesson's own styles. Course editors make those in their own editor; contributors can comment to ask for them. Removing blocks (D10) and formatting text within a block (D11) are in scope.
+- Moving blocks, turning a block into a list or table, font sizes or fonts, or the lesson's own styles. Course editors make those in their own editor; contributors can comment to ask for them. Removing blocks (D10), formatting text within a block (D11) and switching between paragraph and heading (D12) are in scope.
 - An HTML code view in suggest mode. Suggest mode is page only.
 - Editing inside SVG illustrations, form fields or app-added elements.
 - Real-time collaboration, mentions or notifications for comments.
@@ -43,23 +43,26 @@ The viewer gets an edit mode. A click picks the nearest editable text block: a `
 - The viewer re-renders from the new draft, so pagination and the link layers update.
 - *Alternative*: make the whole page `contenteditable`. Rejected: users could delete structure by accident, and browser editing commands write unpredictable markup across blocks.
 
-### D4. Insert after a block
-"Add after this" builds the HTML with the existing `contributionSnippet`, `imageSnippet` or a plain `<p>`, and inserts it at the selected element's end offset in the source. Insertion is only offered for block-level elements, so markup stays valid.
+### D4. Insert from the top bar
+The page editor remembers the last clicked block (its path, tag and text, as in D2), even after editing ends. Text box inserts `<p>New paragraph</p>` and opens it for typing; Image inserts `imageSnippet` after an upload. Both use `insertAfter` on the remembered block, checked as in D2. When the clicked block is a list item, table cell or caption, the insert goes after the whole list, table or figure, so markup stays valid. When no block was clicked, or the remembered block no longer matches, the new part goes after the last element child of `body` (documents) or of the fragment root. `contributionSnippet` is no longer offered; a text box carries no name, and the suggestion records its author.
 
 ### D5. Undo and redo as draft snapshots
 The suggest editor keeps a stack of draft strings (capped at 100). Each on-page commit and insertion pushes a snapshot; undo and redo swap the draft and autosave.
 
 ### D10. Remove a part
-The × on the selected block's bar deletes the block's source range, from its start-tag start to its end-tag end (or end offset when the end tag is implied), using the same mapping and tag-and-text check as edits (D1, D2). When the block starts its own line, the line break and indentation before it go too, and "Add after this" inserts on a new line without a trailing break, so removing something just added restores the draft exactly. When the block is inside an element from our contribution snippets (`.vl-contribution`) or a `figure`, the bar also offers Remove section or Remove image, which deletes that element's range. A list item, table cell or `figcaption` removes only itself; a whole list or table is not removed from the bar. The draft snapshot makes it undoable (D5).
+The × on the selected block's bar deletes the block's source range, from its start-tag start to its end-tag end (or end offset when the end tag is implied), using the same mapping and tag-and-text check as edits (D1, D2). When the block starts its own line, the line break and indentation before it go too, and "Add after this" inserts on a new line without a trailing break, so removing something just added restores the draft exactly. The bar above the clicked block holds only removal: × Remove, plus Remove section when the block is inside a contributor section already in the note (`.vl-contribution`) and Remove image inside a `figure`, which delete that element's range. A list item, table cell or `figcaption` removes only itself; a whole list or table is not removed from the bar. The draft snapshot makes it undoable (D5).
 
 ### D11. Formatting bar
-A bar above the Page view (sticky at the top of the editor's scroll area, so it never covers the lesson) acts on the block being edited. The editing selection is kept while the bar is used (its buttons don't take focus).
+A bar above the Page view (sticky at the top of the editor's scroll area, so it never covers the lesson) is always rendered and enabled, in three groups: Insert (Text box, Image, D4), Block type (D12) and text formats. Text formats act on the block being edited; with none, pressing one shows "Click text on the page first" and changes nothing. The editing selection is kept while the bar is used (its buttons don't take focus).
 
 - Inline formats wrap the selected text in `b`, `i`, `u`, `s`, `a[href]`, `span style="color"` or `mark style="background-color"` with our own range code, splitting at existing inline tags, instead of `document.execCommand`, which writes `font` tags and markup that differs between browsers. Applying a format that already covers the whole selection removes it. Clear formatting unwraps those tags (and palette spans) inside the selection.
 - Colours come from a fixed palette of six text colours and four highlights chosen to read on the lesson's light and dark backgrounds; the clean-up (D3) drops any other value.
 - Alignment rewrites only the block's start tag: it sets or removes `text-align` in that tag's `style` attribute, keeping the tag's other attributes and style declarations as written. Every other character of the draft stays the same.
 - Links ask for a URL in a small field in the bar and accept http(s) and mailto only.
 - *Alternative*: `execCommand` with `styleWithCSS`. Rejected: output differs between browsers and would be partly stripped by the clean-up, so what the contributor sees wouldn't match what is saved.
+
+### D12. Block type
+Normal text and Heading 1–3 rename a `p` or `h1`–`h6` block: the start tag's name and the end tag's name are replaced by parse5 offsets, keeping attributes and content as written. The current inner HTML is committed first, so typing isn't lost. A block whose end tag is implied, or any other element, is refused with the "Leave a comment" offer. With no block being edited, the choice inserts a new block of that type as Text box does (D4).
 
 ### D9. Before/after review screen
 "Review your changes" renders the base version and the draft in two paged viewers side by side, at the same scale, with their scroll positions linked by proportion of height. Changed sections are found with the existing section diff (`diffSegments`): the matching rendered top-level blocks get a highlight class (changed, added on After, removed on Before) in the rendered DOM only. Below a breakpoint the two viewers become tabs.

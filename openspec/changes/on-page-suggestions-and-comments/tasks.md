@@ -17,6 +17,9 @@
 - [x] 2.6 Add × (remove this part) to the selected block's bar, and Remove section inside added Case Study / My Experience / Findings sections (D10). Verify with vitest that removal changes only that range across the 12 imported lessons, and in Chrome that removing an added paragraph, an instructor paragraph and a section works and Undo restores the draft exactly
 - [x] 2.7 Add the formatting bar at the top of the Page view: bold, italic, underline, strikethrough, link, text colour and highlight from the palette, clear formatting, disabled when nothing is edited; extend the clean-up for `s` and palette styles (D11, D3). Verify with vitest on wrapping, toggling, clearing and dropping non-palette colours, and in Chrome that each format reaches the draft
 - [x] 2.8 Add alignment (left, centre, right, justify) by rewriting only the block's start-tag `style` (D11). Verify with vitest that only the start tag changes and other attributes and styles are kept, and in Chrome that a paragraph centres
+- [x] 2.9 Move inserting to the top bar (Text box, Image) at the last-clicked block or the end of the note, and remove the Case Study / My Experience / Findings / Paragraph buttons from the block bar (D4). Verify with vitest inserting at the end of a document and a fragment, and in Chrome after a clicked part, with nothing clicked, and that Undo restores the draft exactly
+- [x] 2.10 Add the block type menu (Normal text, Heading 1–3) (D12). Verify with vitest that only the tag names change across the 12 imported lessons, and in Chrome that paragraph → Heading 2 → Normal text restores the draft exactly and that choosing a heading with nothing being edited inserts one
+- [x] 2.11 Keep the top bar always enabled, with the "Click text on the page first" hint for text formats (D11). Verify in Chrome that pressing Bold with nothing being edited shows the hint and leaves the draft unchanged
 
 ## 3. Comments database (D6)
 
@@ -37,6 +40,7 @@
 - [ ] 5.1 Run the unit tests, typecheck and build, check the suggest Page view and comments end to end in Chrome against staging data, and record what was verified with real accounts in this file
 - [x] 5.2 Update `docs/` with a short guide for contributors (editing on the page, comments) and verify it renders
 - [x] 5.3 Update `docs/contributing-on-the-page.md` for removing parts and the formatting bar
+- [x] 5.4 Update `docs/contributing-on-the-page.md` for the top bar's Text box, Image and block type
 
 ## Workflow follow-up
 

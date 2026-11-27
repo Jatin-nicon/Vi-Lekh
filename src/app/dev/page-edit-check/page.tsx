@@ -45,7 +45,7 @@ function Harness() {
   if (html === null) return <main className="p-20 text-sm">Loading…</main>;
   return (
     <main className="max-w-5xl mx-auto p-4 pt-20 space-y-4">
-      <PageEditor html={html} onChange={setHtml} contributor={{ id: "dev-user", name: "Asha Rao" }} onUneditable={setCommentOn} />
+      <PageEditor html={html} onChange={setHtml} onUneditable={setCommentOn} />
       {commentOn && (
         <LeaveCommentDialog
           noteId="dev-note"

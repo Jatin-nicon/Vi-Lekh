@@ -9,12 +9,16 @@ import {
   Bold,
   Check,
   ChevronDown,
+  Heading,
   Highlighter,
+  ImagePlus,
   Italic,
   Link2,
   Link2Off,
+  Loader2,
   RemoveFormatting,
   Strikethrough,
+  TextCursorInput,
   Type,
   Underline,
   X,
@@ -38,17 +42,48 @@ import { HIGHLIGHTS, TEXT_COLORS } from "@/lib/editor/format-palette";
 
 const NONE: ActiveFormats = { bold: false, italic: false, underline: false, strike: false, link: null, color: null, highlight: null };
 
+/** The block types the bar offers (design D12). */
+export const BLOCK_TYPES = [
+  { tag: "p", label: "Normal text" },
+  { tag: "h1", label: "Heading 1" },
+  { tag: "h2", label: "Heading 2" },
+  { tag: "h3", label: "Heading 3" },
+] as const;
+export type BlockTag = (typeof BLOCK_TYPES)[number]["tag"];
+
+const FIRST = "Click text on the page first.";
+
 /**
- * The formatting bar above the Page view (design D11). It acts on the block
- * being edited; its buttons don't take focus, so the selection stays put.
+ * The bar above the Page view (design D4, D11, D12): always shown and
+ * available. Text box and Image add a part; the block type changes the part
+ * being edited or adds a new one; text formats act on the part being edited.
+ * Its buttons don't take focus, so the selection stays put.
  */
-export function FormatBar({ element }: { element: HTMLElement | null }) {
+export function FormatBar({
+  element,
+  onTextBox,
+  onImage,
+  imageBusy = false,
+  onBlockType,
+}: {
+  element: HTMLElement | null;
+  onTextBox?: () => void;
+  onImage?: () => void;
+  imageBusy?: boolean;
+  /** Changes the part being edited to this type, or adds a new part of it when none is being edited. */
+  onBlockType?: (tag: BlockTag) => void;
+}) {
   const [active, setActive] = useState<ActiveFormats>(NONE);
   const [align, setAlign] = useState<Align>("left");
-  const [menu, setMenu] = useState<"color" | "highlight" | null>(null);
+  const [menu, setMenu] = useState<"color" | "highlight" | "type" | null>(null);
   const [linking, setLinking] = useState<{ range: Range; url: string } | null>(null);
-  const [hint, setHint] = useState<string | null>(null);
+  // A hint belongs to the part it was given for, so it goes when editing moves on.
+  const [hintState, setHintState] = useState<{ text: string; for: HTMLElement | null } | null>(null);
+  const hint = hintState && hintState.for === element ? hintState.text : null;
+  const setHint = (text: string | null) => setHintState(text ? { text, for: element } : null);
   const linkInput = useRef<HTMLInputElement>(null);
+  const blockTag = element?.tagName.toLowerCase() ?? null;
+  const blockLabel = BLOCK_TYPES.find((t) => t.tag === blockTag)?.label ?? (blockTag && /^h[4-6]$/.test(blockTag) ? `Heading ${blockTag[1]}` : element ? "Other" : "Normal text");
 
   // Keep the pressed buttons in step with the selection.
   useEffect(() => {
@@ -65,7 +100,6 @@ export function FormatBar({ element }: { element: HTMLElement | null }) {
       setActive(NONE);
       setMenu(null);
       setLinking(null);
-      setHint(null);
     };
   }, [element]);
 
@@ -75,7 +109,7 @@ export function FormatBar({ element }: { element: HTMLElement | null }) {
 
   /** Runs a change on the selected text; keeps it selected afterwards. */
   const withSelection = (change: (el: HTMLElement, range: Range) => Range | null) => {
-    if (!element) return;
+    if (!element) return setHint(FIRST);
     const range = selectionIn(element);
     if (!range || range.collapsed) {
       setHint("Select some text in the part you're editing first.");
@@ -90,11 +124,28 @@ export function FormatBar({ element }: { element: HTMLElement | null }) {
   const toggle = (f: InlineFormat) => withSelection((el, r) => toggleFormat(el, r, f));
 
   const setAlignment = (value: Align) => {
-    if (element) setAlign(setBlockAlign(element, value));
+    if (!element) return setHint(FIRST);
+    setAlign(setBlockAlign(element, value));
+  };
+
+  /** Opens a colour menu, or says to click text first. */
+  const openMenu = (which: "color" | "highlight") => {
+    if (!element) return setHint(FIRST);
+    setMenu((m) => (m === which ? null : which));
+  };
+
+  const pickType = (tag: BlockTag) => {
+    setMenu(null);
+    if (element && !BLOCK_TYPES.some((t) => t.tag === blockTag) && !/^h[4-6]$/.test(blockTag ?? "")) {
+      setHint("Only paragraphs and headings can change type.");
+      return;
+    }
+    setHint(null);
+    onBlockType?.(tag);
   };
 
   const startLink = () => {
-    if (!element) return;
+    if (!element) return setHint(FIRST);
     const range = selectionIn(element);
     if (active.link && range) {
       // Already a link: remove it.
@@ -131,7 +182,6 @@ export function FormatBar({ element }: { element: HTMLElement | null }) {
     }
   };
 
-  const off = !element;
   const btn = (on: boolean) =>
     `inline-flex items-center justify-center gap-1 h-7 min-w-7 px-1.5 rounded-md text-xs cursor-pointer disabled:opacity-40 disabled:cursor-default ${
       on ? "bg-[#DBEAFE] text-[#1D4ED8] dark:bg-[#1E3A8A]/50 dark:text-[#BFDBFE]" : "hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
@@ -146,22 +196,53 @@ export function FormatBar({ element }: { element: HTMLElement | null }) {
       data-vl-keep-editing=""
       className="sticky top-16 z-30 flex flex-wrap items-center gap-1 p-1.5 rounded-xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5]/95 dark:bg-[#21201E]/95 backdrop-blur shadow-sm text-[#2D2926] dark:text-[#E3DFD7]"
     >
-      <div className="flex items-center gap-0.5" onPointerDown={keep} onMouseDown={keep}>
-        <button type="button" disabled={off} className={btn(active.bold)} aria-pressed={active.bold} onClick={() => toggle("bold")} title="Bold (Ctrl+B)" aria-label="Bold">
+      <div className="flex flex-wrap items-center gap-0.5" onPointerDown={keep} onMouseDown={keep}>
+        <button type="button" className={btn(false)} onClick={() => onTextBox?.()} title="Add a text box after the part you last clicked" aria-label="Text box">
+          <TextCursorInput className="w-3.5 h-3.5" /> Text box
+        </button>
+        <button type="button" className={btn(false)} disabled={imageBusy} onClick={() => onImage?.()} title="Add an image after the part you last clicked" aria-label="Image">
+          {imageBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />} Image
+        </button>
+        {sep}
+        <div className="relative">
+          <button type="button" className={`${btn(menu === "type")} min-w-28 justify-between`} onClick={() => setMenu((m) => (m === "type" ? null : "type"))} title="Text type" aria-label="Text type" aria-haspopup="menu" aria-expanded={menu === "type"}>
+            <Heading className="w-3.5 h-3.5" /> <span className="flex-1 text-left">{blockLabel}</span>
+            <ChevronDown className="w-3 h-3" />
+          </button>
+          {menu === "type" && (
+            <div role="menu" aria-label="Text type" className="absolute left-0 top-full mt-1 z-40 flex flex-col p-1 rounded-lg border border-[#E8E3D9] dark:border-[#33312E] bg-white dark:bg-[#181716] shadow-lg min-w-36">
+              {BLOCK_TYPES.map((t) => (
+                <button
+                  key={t.tag}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={blockTag === t.tag}
+                  onClick={() => pickType(t.tag)}
+                  className={`flex items-center gap-2 px-2 py-1 rounded-md text-left cursor-pointer hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] ${t.tag === "p" ? "text-xs" : t.tag === "h1" ? "text-base font-bold" : t.tag === "h2" ? "text-sm font-bold" : "text-xs font-bold"}`}
+                >
+                  <span className="w-3.5">{blockTag === t.tag && <Check className="w-3.5 h-3.5" />}</span>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {sep}
+        <button type="button" className={btn(active.bold)} aria-pressed={active.bold} onClick={() => toggle("bold")} title="Bold (Ctrl+B)" aria-label="Bold">
           <Bold className="w-3.5 h-3.5" />
         </button>
-        <button type="button" disabled={off} className={btn(active.italic)} aria-pressed={active.italic} onClick={() => toggle("italic")} title="Italic (Ctrl+I)" aria-label="Italic">
+        <button type="button" className={btn(active.italic)} aria-pressed={active.italic} onClick={() => toggle("italic")} title="Italic (Ctrl+I)" aria-label="Italic">
           <Italic className="w-3.5 h-3.5" />
         </button>
-        <button type="button" disabled={off} className={btn(active.underline)} aria-pressed={active.underline} onClick={() => toggle("underline")} title="Underline (Ctrl+U)" aria-label="Underline">
+        <button type="button" className={btn(active.underline)} aria-pressed={active.underline} onClick={() => toggle("underline")} title="Underline (Ctrl+U)" aria-label="Underline">
           <Underline className="w-3.5 h-3.5" />
         </button>
-        <button type="button" disabled={off} className={btn(active.strike)} aria-pressed={active.strike} onClick={() => toggle("strike")} title="Strikethrough" aria-label="Strikethrough">
+        <button type="button" className={btn(active.strike)} aria-pressed={active.strike} onClick={() => toggle("strike")} title="Strikethrough" aria-label="Strikethrough">
           <Strikethrough className="w-3.5 h-3.5" />
         </button>
         {sep}
         <div className="relative">
-          <button type="button" disabled={off} className={btn(menu === "color")} onClick={() => setMenu((m) => (m === "color" ? null : "color"))} title="Text colour" aria-label="Text colour" aria-expanded={menu === "color"}>
+          <button type="button" className={btn(menu === "color")} onClick={() => openMenu("color")} title="Text colour" aria-label="Text colour" aria-expanded={menu === "color"}>
             <Type className="w-3.5 h-3.5" style={{ color: active.color ?? undefined }} />
             <ChevronDown className="w-3 h-3" />
           </button>
@@ -179,7 +260,7 @@ export function FormatBar({ element }: { element: HTMLElement | null }) {
           )}
         </div>
         <div className="relative">
-          <button type="button" disabled={off} className={btn(menu === "highlight")} onClick={() => setMenu((m) => (m === "highlight" ? null : "highlight"))} title="Highlight" aria-label="Highlight" aria-expanded={menu === "highlight"}>
+          <button type="button" className={btn(menu === "highlight")} onClick={() => openMenu("highlight")} title="Highlight" aria-label="Highlight" aria-expanded={menu === "highlight"}>
             <Highlighter className="w-3.5 h-3.5" />
             <ChevronDown className="w-3 h-3" />
           </button>
@@ -196,7 +277,7 @@ export function FormatBar({ element }: { element: HTMLElement | null }) {
             />
           )}
         </div>
-        <button type="button" disabled={off} className={btn(!!active.link || !!linking)} aria-pressed={!!active.link} onClick={startLink} title={active.link ? "Remove link" : "Link"} aria-label={active.link ? "Remove link" : "Link"}>
+        <button type="button" className={btn(!!active.link || !!linking)} aria-pressed={!!active.link} onClick={startLink} title={active.link ? "Remove link" : "Link"} aria-label={active.link ? "Remove link" : "Link"}>
           {active.link ? <Link2Off className="w-3.5 h-3.5" /> : <Link2 className="w-3.5 h-3.5" />}
         </button>
         {sep}
@@ -208,12 +289,12 @@ export function FormatBar({ element }: { element: HTMLElement | null }) {
             ["justify", AlignJustify, "Justify"],
           ] as const
         ).map(([value, Icon, label]) => (
-          <button key={value} type="button" disabled={off} className={btn(!off && align === value)} aria-pressed={!off && align === value} onClick={() => setAlignment(value)} title={label} aria-label={label}>
+          <button key={value} type="button" className={btn(!!element && align === value)} aria-pressed={!!element && align === value} onClick={() => setAlignment(value)} title={label} aria-label={label}>
             <Icon className="w-3.5 h-3.5" />
           </button>
         ))}
         {sep}
-        <button type="button" disabled={off} className={btn(false)} onClick={() => withSelection((el, r) => clearFormatting(el, r))} title="Clear formatting" aria-label="Clear formatting">
+        <button type="button" className={btn(false)} onClick={() => withSelection((el, r) => clearFormatting(el, r))} title="Clear formatting" aria-label="Clear formatting">
           <RemoveFormatting className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -248,7 +329,7 @@ export function FormatBar({ element }: { element: HTMLElement | null }) {
         </form>
       )}
       <span className="px-1.5 text-[11px] text-[#757069] dark:text-[#948F86]" role="status">
-        {hint ?? (off ? "Click text on the page to format it." : "")}
+        {hint ?? (element ? "" : "Click text on the page to edit or format it.")}
       </span>
     </div>
   );

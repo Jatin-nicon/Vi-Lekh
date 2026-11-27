@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { innerRange, insertAfter, locate, parseSource, removeElement, renderedPath, replaceInner, resolvePath, setStartTagStyle } from "./source-map";
+import { innerRange, insertAfter, insertAtEnd, locate, parseSource, removeElement, renameElement, renderedPath, replaceInner, resolvePath, setStartTagStyle } from "./source-map";
 import { prepareDocument } from "@/lib/layout/document-html";
 import { diffSegments } from "@/lib/diff/html-diff";
 
@@ -119,11 +119,39 @@ describe("source map", () => {
     expect(setStartTagStyle(selfClosing, resolvePath(parseSource(selfClosing), [0])!, "text-align", "center")).toBe(`<div style="text-align: center"/>`);
   });
 
+  it("inserts at the end of a fragment and of a document body", () => {
+    const frag = "<h1>T</h1>\n<p>One</p>";
+    const f = insertAtEnd(parseSource(frag), "<p>New</p>\n");
+    expect(f).toEqual({ html: "<h1>T</h1>\n<p>One</p>\n<p>New</p>", path: [2] });
+    expect(insertAtEnd(parseSource(""), "<p>New</p>")).toEqual({ html: "\n<p>New</p>", path: [0] });
+    const doc = "<!doctype html><html><head><style>p{}</style></head><body>\n<p>One</p>\n<script>x()</script>\n</body></html>";
+    const d = insertAtEnd(parseSource(doc), "<p>New</p>");
+    expect(d.html).toBe("<!doctype html><html><head><style>p{}</style></head><body>\n<p>One</p>\n<p>New</p>\n<script>x()</script>\n</body></html>");
+    expect(d.path).toEqual([1]);
+    expect(resolvePath(parseSource(d.html), d.path)?.tagName).toBe("p");
+    const empty = "<!doctype html><html><body></body></html>";
+    expect(insertAtEnd(parseSource(empty), "<p>New</p>").html).toBe("<!doctype html><html><body>\n<p>New</p></body></html>");
+  });
+
+  it("renames a paragraph or heading, changing only the tag names", () => {
+    const html = '<p class="lead" style="color: red">Some <b>text</b></p>\n<H2 id="x">Head</H2>';
+    const p = resolvePath(parseSource(html), [0])!;
+    const h = renameElement(html, p, "h2");
+    expect(h).toBe('<h2 class="lead" style="color: red">Some <b>text</b></h2>\n<H2 id="x">Head</H2>');
+    expect(renameElement(h, resolvePath(parseSource(h), [0])!, "p")).toBe(html);
+    expect(renameElement(html, resolvePath(parseSource(html), [1])!, "h3")).toBe('<p class="lead" style="color: red">Some <b>text</b></p>\n<h3 id="x">Head</h3>');
+    const implied = "<p>One<p>Two";
+    expect(() => renameElement(implied, resolvePath(parseSource(implied), [0])!, "h2")).toThrow();
+    const li = "<ul><li>A</li></ul>";
+    expect(() => renameElement(li, resolvePath(parseSource(li), [0, 0])!, "h2")).toThrow();
+  });
+
   // The imported lessons are not in the repository. Point LESSONS_DIR at a folder of them to run this.
   const dir = process.env.LESSONS_DIR;
   it.runIf(Boolean(dir))("maps every text block of the imported lessons and edits only that block", () => {
     const files = fs.readdirSync(dir!).filter((f) => f.endsWith(".html"));
     expect(files.length).toBeGreaterThan(0);
+    let renames = 0;
     for (const f of files) {
       const html = fs.readFileSync(path.join(dir!, f), "utf8");
       const root = render(html, true);
@@ -147,8 +175,22 @@ describe("source map", () => {
         expect(aligned.slice(0, startOffset)).toBe(html.slice(0, startOffset));
         expect(aligned.slice(aligned.length - (html.length - tagEnd))).toBe(html.slice(tagEnd));
         expect(parseSource(aligned).html).toContain("text-align: center");
+        // Changing the type changes only the tag names (design D12).
+        const tag = loc.element.tagName;
+        if (["p", "h1", "h2", "h3", "h4", "h5", "h6"].includes(tag) && loc.element.sourceCodeLocation!.endTag) {
+          const to = tag === "h2" ? "h3" : "h2";
+          const renamed = renameElement(html, loc.element, to);
+          const { startTag, endTag } = loc.element.sourceCodeLocation!;
+          expect(renamed.length).toBe(html.length + 2 * (to.length - tag.length));
+          expect(renamed.slice(0, startTag!.startOffset + 1)).toBe(html.slice(0, startTag!.startOffset + 1));
+          expect(renamed.slice(renamed.length - (html.length - endTag!.startOffset - 2 - tag.length))).toBe(html.slice(endTag!.startOffset + 2 + tag.length));
+          const back = renameElement(renamed, resolvePath(parseSource(renamed), loc.path)!, tag);
+          expect(back === html).toBe(true);
+          renames++;
+        }
       }
       expect(ok, f).toBe(blocks.length);
     }
-  });
+    expect(renames).toBeGreaterThan(100);
+  }, 60_000);
 });

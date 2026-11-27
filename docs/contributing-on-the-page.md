@@ -14,25 +14,32 @@ reviews and merges your suggestion.
   text and type. Click anywhere else to keep the change. **Enter** starts a
   new line inside the same part and **Esc** cancels. Pasted text loses its
   formatting.
-- **Add something:** after you click a part, a bar appears above it. Pick
-  **Case Study**, **My Experience**, **Findings**, **Paragraph** or **Image**
-  to add it after that part. A new section is credited to you and opens for
-  typing. If you clicked a list item or a table cell, the new part goes after
-  the whole list or table.
-- **Remove something:** the same bar has **× Remove**, which takes out the
-  part you clicked, whether you added it or it was already in the note.
-  Inside a Case Study, My Experience or Findings section you added, or an
-  image, **Remove section** or **Remove image** takes out the whole thing.
-  Removed parts show in red when you review your changes.
-- **Format text:** the formatting bar at the top of the page stays in view as
-  you scroll. Click into a part, select some text, then choose **Bold**,
+- **The bar at the top:** it stays in view as you scroll and is always
+  available, like the toolbar in a document editor.
+- **Add something:** press **Text box** in the top bar to add a new
+  paragraph, or **Image** to add a picture. It goes after the part you
+  clicked last, or at the end of the note if you haven't clicked anything,
+  and a text box opens ready to type in. Several added in a row stay in
+  order. If you clicked a list item or a table cell, the new part goes after
+  the whole list or table. Write whatever you like in it, for example a
+  heading such as "Case Study" followed by your text.
+- **Headings:** the text type menu in the top bar (**Normal text**,
+  **Heading 1**, **Heading 2**, **Heading 3**) changes the paragraph or
+  heading you're editing. With nothing being edited, it adds a new heading
+  or paragraph instead.
+- **Remove something:** after you click a part, a small bar appears above
+  it with **× Remove**, which takes out that part, whether you added it or
+  it was already in the note. Inside a contributor section already in the
+  note, or an image, **Remove section** or **Remove image** takes out the
+  whole thing. Removed parts show in red when you review your changes.
+- **Format text:** click into a part, select some text, then choose **Bold**,
   **Italic**, **Underline**, **Strikethrough**, a **text colour**, a
   **highlight**, or **Link** (type the address and press Enter). **Clear
   formatting** removes all of these from the selected text. The alignment
   buttons (left, centre, right, justify) apply to the whole part.
   **Ctrl+B**, **Ctrl+I** and **Ctrl+U** (**⌘B**, **⌘I** and **⌘U** on a Mac)
   also work. Colours come from a small set that reads well on light and dark
-  pages.
+  pages. If nothing is being edited, the bar asks you to click text first.
 - **Undo and redo:** use the buttons, or **Ctrl+Z** and **Ctrl+Y** (or
   **⌘Z** and **⌘⇧Z** on a Mac) when you aren't typing in a part.
 - **Parts you can't edit:** drawings, answer boxes and some formatted parts,

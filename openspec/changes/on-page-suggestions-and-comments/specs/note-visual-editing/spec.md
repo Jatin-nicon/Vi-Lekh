@@ -43,19 +43,34 @@ Writing an on-page edit back into the draft SHALL change only the edited block's
 - **WHEN** the contributor pastes formatted text from another website into a block
 - **THEN** only the plain text (with line breaks) is inserted, without the other site's styles or scripts
 
-### Requirement: Insert sections after a block
-When a block is selected in the Page view, the editor SHALL offer to add, directly after it, a Case Study, My Experience or Findings section (credited to the contributor), a paragraph, or an image from a file.
+### Requirement: Add text and images
+The top bar of the Page view SHALL always offer Text box and Image. They SHALL insert the new part directly after the block the contributor last clicked, or at the end of the note when no block was clicked. A new text box SHALL open for typing.
 
-#### Scenario: Add a case study after a paragraph
-- **WHEN** the contributor selects a paragraph and chooses "Add after this → Case Study"
-- **THEN** a Case Study section with the contributor's name appears right after that paragraph, ready to edit in place
+#### Scenario: Add a text box after a paragraph
+- **WHEN** the contributor clicks a paragraph, then chooses Text box in the top bar
+- **THEN** a new paragraph appears right after that paragraph, ready to type in
+
+#### Scenario: Add a text box with nothing clicked
+- **WHEN** the contributor opens the Page view and chooses Text box without clicking any part
+- **THEN** the new paragraph appears at the end of the note
 
 #### Scenario: Add an image
-- **WHEN** the contributor chooses "Add after this → Image" and selects an image file
-- **THEN** the optimized image appears after the block, and a non-image file shows an error and adds nothing
+- **WHEN** the contributor chooses Image and selects an image file
+- **THEN** the optimized image appears after the last-clicked block, and a non-image file shows an error and adds nothing
+
+### Requirement: Block type
+The top bar SHALL offer Normal text, Heading 1, Heading 2 and Heading 3. While a paragraph or heading is being edited, choosing one SHALL change only that block's tag, keeping its attributes and content. With no block being edited, choosing one SHALL insert a new block of that type where Text box would.
+
+#### Scenario: Turn a paragraph into a heading
+- **WHEN** the contributor edits a paragraph and chooses Heading 2
+- **THEN** the paragraph shows as a heading, and in the draft only its start and end tag names change
+
+#### Scenario: Insert a heading
+- **WHEN** no block is being edited and the contributor chooses Heading 2
+- **THEN** a new Heading 2 is inserted and opens for typing
 
 ### Requirement: Remove a part
-When a block is selected in the Page view, the editor SHALL offer to remove it. Removing SHALL delete only that block from the draft and leave every other character unchanged. When the block is inside a section the contributor added (Case Study, My Experience or Findings), the editor SHALL also offer to remove the whole section. Removal SHALL be possible for the instructor's blocks as well as the contributor's.
+When a block is selected in the Page view, the editor SHALL offer to remove it. Removing SHALL delete only that block from the draft and leave every other character unchanged. When the block is inside a contributor section (a Case Study, My Experience or Findings section already in the note) or is an image, the editor SHALL also offer to remove the whole section or image. Removal SHALL be possible for the instructor's blocks as well as the contributor's.
 
 #### Scenario: Remove a paragraph the contributor added
 - **WHEN** the contributor selects a paragraph they added and presses ×
@@ -66,7 +81,7 @@ When a block is selected in the Page view, the editor SHALL offer to remove it. 
 - **THEN** it is removed from the draft and "Review your changes" shows it as removed
 
 #### Scenario: Remove an added section
-- **WHEN** the contributor selects text inside a Case Study section they added and chooses Remove section
+- **WHEN** the contributor selects text inside a contributor section and chooses Remove section
 - **THEN** the whole section is removed
 
 #### Scenario: Undo a removal
@@ -74,7 +89,7 @@ When a block is selected in the Page view, the editor SHALL offer to remove it. 
 - **THEN** the draft is exactly as it was before the removal
 
 ### Requirement: Format text
-A formatting bar at the top of the Page view SHALL stay visible while scrolling and act on the block being edited: bold, italic, underline, strikethrough, link, palette text colour and highlight, alignment (left, centre, right, justify) and clear formatting. Inline formats SHALL apply to the selected text and alignment to the whole block, changing nothing outside that block. The controls SHALL be disabled when no block is being edited.
+A formatting bar at the top of the Page view SHALL stay visible while scrolling and act on the block being edited: bold, italic, underline, strikethrough, link, palette text colour and highlight, alignment (left, centre, right, justify) and clear formatting. Inline formats SHALL apply to the selected text and alignment to the whole block, changing nothing outside that block.
 
 #### Scenario: Bold a word
 - **WHEN** the contributor selects a word in the block being edited and presses Bold
@@ -92,9 +107,12 @@ A formatting bar at the top of the Page view SHALL stay visible while scrolling 
 - **WHEN** the contributor selects formatted text and chooses Clear formatting
 - **THEN** the text keeps its words but loses the bold, italic, underline, strikethrough, colour and highlight
 
+### Requirement: Top bar always available
+The top bar SHALL always be visible in the Page view with its controls available. Pressing a text format with no block being edited SHALL say to click text on the page first and change nothing.
+
 #### Scenario: Nothing being edited
-- **WHEN** no block is being edited
-- **THEN** the formatting controls are disabled
+- **WHEN** no block is being edited and the contributor presses Bold
+- **THEN** the bar says to click text on the page first, and the draft is unchanged
 
 ### Requirement: Parts that can't be edited on the page
 When the contributor clicks a block whose change can't be safely written back into the note's HTML, the system SHALL NOT edit it, SHALL say that this part can't be edited on the page, and SHALL offer to leave a comment about it instead.
@@ -122,5 +140,5 @@ Before the summary and submit step, the system SHALL show a "Review your changes
 The Page view SHALL let the contributor undo and redo their on-page edits and insertions, in order.
 
 #### Scenario: Undo an insertion
-- **WHEN** the contributor adds a Findings section and then chooses Undo
-- **THEN** the section is removed and the draft is as it was before the insertion
+- **WHEN** the contributor adds a text box and then chooses Undo
+- **THEN** the text box is removed and the draft is as it was before the insertion

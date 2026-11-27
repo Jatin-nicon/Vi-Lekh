@@ -1,26 +1,26 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, ChevronUp, FlaskConical, ImagePlus, ListChecks, Loader2, MessageSquarePlus, MousePointerClick, Pilcrow, Redo2, Undo2, User, X } from "lucide-react";
+import { ChevronUp, MessageSquarePlus, MousePointerClick, Redo2, Undo2, X } from "lucide-react";
 import { HtmlSandboxedViewer, type PageEditing } from "@/components/editor/html-sandboxed-viewer";
 import { renderMathInHtml } from "@/lib/editor/math-html";
-import { insertAfter, locate, locateEdited, parseSource, removeElement, renderedPath, renderedText, replaceInner, setStartTagStyle, type SourceTree } from "@/lib/editor/source-map";
-import { FormatBar } from "@/components/editor/format-bar";
+import { insertAfter, insertAtEnd, locate, locateEdited, parseSource, removeElement, renameElement, renderedPath, renderedText, replaceInner, resolvePath, setStartTagStyle, sourceText, type SourceTree } from "@/lib/editor/source-map";
+import { FormatBar, type BlockTag } from "@/components/editor/format-bar";
 import { insertionAnchor } from "@/lib/editor/page-editing";
 import { blockAnchor } from "@/lib/editor/comment-anchor";
 import type { CommentAnchor } from "@/lib/data/comments";
-import { contributionSnippet, imageSnippet, type ContributionKind, type Contributor } from "@/lib/editor/contribution-snippets";
+import { imageSnippet } from "@/lib/editor/contribution-snippets";
 import { uploadImage } from "@/lib/services/image-upload";
 
 const HISTORY_LIMIT = 100;
 
-/** What "Add after this" inserts, and which part of it opens for editing (a child-index path inside the new element). */
-const INSERTS: { key: string; label: string; icon: React.ReactNode; focus: number[]; build: (c: Contributor | null) => string }[] = [
-  { key: "case-study", label: "Case Study", icon: <BookOpen className="w-3.5 h-3.5" />, focus: [1], build: (c) => contributionSnippet("case-study" as ContributionKind, c) },
-  { key: "experience", label: "My Experience", icon: <User className="w-3.5 h-3.5" />, focus: [1], build: (c) => contributionSnippet("experience", c) },
-  { key: "findings", label: "Findings", icon: <FlaskConical className="w-3.5 h-3.5" />, focus: [1, 0], build: (c) => contributionSnippet("findings", c) },
-  { key: "paragraph", label: "Paragraph", icon: <Pilcrow className="w-3.5 h-3.5" />, focus: [], build: () => "<p>New paragraph</p>\n" },
-];
+/** What the top bar's Text box and block types insert (design D4, D12). */
+const NEW_BLOCK: Record<BlockTag, string> = {
+  p: "<p>New paragraph</p>",
+  h1: "<h1>New heading</h1>",
+  h2: "<h2>New heading</h2>",
+  h3: "<h3>New heading</h3>",
+};
 
 /** A rendered element found again in the source by its path, tag and text (design D2). */
 interface Target {
@@ -30,10 +30,6 @@ interface Target {
 }
 
 interface Selected {
-  /** Where new sections go: after the block, or after its whole list or table. */
-  anchorPath: number[];
-  anchorTag: string;
-  anchorText: string;
   /** The block itself, for removing it (design D10). */
   block: Target;
   /** The added section or figure around the block, which can be removed as a whole. */
@@ -47,6 +43,8 @@ const targetOf = (el: Element, root: Element): Target | null => {
   return path ? { path, tag: el.tagName, text: renderedText(el) } : null;
 };
 
+const startsWith = (path: number[], prefix: number[]) => prefix.length <= path.length && prefix.every((v, i) => path[i] === v);
+
 /**
  * Suggest mode's Page view (design D3–D5): the draft rendered like the
  * reader, edited by clicking text. Edits and insertions are spliced into the
@@ -55,24 +53,24 @@ const targetOf = (el: Element, root: Element): Target | null => {
 export function PageEditor({
   html,
   onChange,
-  contributor,
   onUneditable,
 }: {
   html: string;
   onChange: (html: string) => void;
-  contributor: Contributor | null;
   /** "Leave a comment" on text that can't be edited on the page; without it, only a message shows. */
   onUneditable?: (anchor: CommentAnchor) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const latest = useRef(html);
   const tree = useRef<SourceTree | null>(null);
-  const focusNext = useRef<number[] | null>(null);
+  const focusNext = useRef<{ path: number[]; caret: "all" | "end" } | null>(null);
+  /** Where the top bar inserts: after the part last clicked (or its whole list or table), kept after editing ends (design D4). */
+  const anchor = useRef<Target | null>(null);
   const history = useRef<{ stack: string[]; index: number }>({ stack: [html], index: 0 });
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const [selected, setSelected] = useState<Selected | null>(null);
   /** The block being edited, for the formatting bar, and a way to drop its edit before removing it. */
-  const [session, setSession] = useState<{ element: HTMLElement; cancel: () => void } | null>(null);
+  const [session, setSession] = useState<{ element: HTMLElement; cancel: () => void; commit: () => void } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   /** The part that couldn't be edited, offered for a comment instead. */
   const [uneditable, setUneditable] = useState<CommentAnchor | null>(null);
@@ -163,14 +161,20 @@ export function PageEditor({
         // The inner change comes after the start tag, so its offsets still hold (design D11).
         if (change.align !== undefined) next = setStartTagStyle(next, found.element, "text-align", change.align || null);
         apply(next);
+        // The insertion point may hold the edited block; keep its text current.
+        const a = anchor.current;
+        if (a && startsWith(path, a.path)) {
+          const el2 = resolvePath(sourceTree(), a.path);
+          anchor.current = el2 ? { ...a, text: sourceText(el2) } : null;
+        }
       },
-      onSession: (s) => setSession(s ? { element: s.element, cancel: s.cancel } : null),
+      onSession: (s) => setSession(s ? { element: s.element, cancel: s.cancel, commit: s.commit } : null),
       onSelect: (sel) => {
         if (!sel) return setSelected(null);
-        const anchor = insertionAnchor(sel.element, sel.root);
-        const anchorPath = renderedPath(anchor, sel.root);
+        const atTarget = targetOf(insertionAnchor(sel.element, sel.root), sel.root);
+        if (atTarget) anchor.current = atTarget;
         const wrap = wrapRef.current;
-        if (!anchorPath || !wrap) return setSelected(null);
+        if (!wrap) return setSelected(null);
         const rect = sel.element.getBoundingClientRect();
         const block = targetOf(sel.element, sel.root);
         if (!block) return setSelected(null);
@@ -181,9 +185,6 @@ export function PageEditor({
         setNotice(null);
         setUneditable(null);
         setSelected({
-          anchorPath,
-          anchorTag: anchor.tagName,
-          anchorText: (anchor.textContent ?? "").replace(/\s+/g, " ").trim(),
           block,
           container: aroundTarget ? { ...aroundTarget, label: around === section ? "section" : "image" } : null,
           top: rect.top - wrap.getBoundingClientRect().top - 6,
@@ -207,19 +208,57 @@ export function PageEditor({
     [apply, sourceTree, onUneditable],
   );
 
-  /** Inserts markup after the selected block and opens part of it for editing. */
+  /**
+   * Inserts markup after the part last clicked, or at the end of the note when
+   * none was (or it is gone), and opens part of it for editing (design D4).
+   */
   const insert = (markup: string, focus: number[] | null) => {
-    if (!selected) return;
-    const found = locateEdited(sourceTree(), selected.anchorPath, selected.anchorTag, selected.anchorText);
-    if (!found.ok) {
-      say("Couldn't add it there. Click the text again and retry.");
+    // Keep any typing in the part being edited first.
+    session?.commit();
+    const tree = sourceTree();
+    const a = anchor.current;
+    const found = a ? locateEdited(tree, a.path, a.tag, a.text) : null;
+    let next: string;
+    let newPath: number[];
+    if (a && found?.ok) {
+      next = insertAfter(tree.html, found.element, markup);
+      newPath = [...a.path.slice(0, -1), a.path[a.path.length - 1] + 1];
+    } else {
+      ({ html: next, path: newPath } = insertAtEnd(tree, markup));
+    }
+    const added = resolvePath(parseSource(next), newPath);
+    // The next insert goes after this one, so parts added in a row stay in order.
+    anchor.current = added ? { path: newPath, tag: added.tagName.toUpperCase(), text: sourceText(added) } : null;
+    focusNext.current = focus ? { path: [...newPath, ...focus], caret: "all" } : null;
+    setSelected(null);
+    apply(next);
+  };
+
+  /** Changes the part being edited to another block type, or adds a new part of that type (design D12). */
+  const setBlockType = (tag: BlockTag) => {
+    const s = session;
+    if (!s) return insert(NEW_BLOCK[tag], []);
+    if (s.element.tagName.toLowerCase() === tag) return;
+    const root = s.element.closest(".vl-doc, .vl-flow");
+    s.commit();
+    const target = root ? targetOf(s.element, root) : null;
+    const found = target ? locateEdited(sourceTree(), target.path, target.tag, target.text) : null;
+    if (!target || !found || !found.ok) {
+      say("Couldn't change that part. Click it again and retry.");
       return;
     }
-    const at = selected.anchorPath;
-    const newPath = [...at.slice(0, -1), at[at.length - 1] + 1];
-    focusNext.current = focus ? [...newPath, ...focus] : null;
+    let next: string;
+    try {
+      next = renameElement(latest.current, found.element, tag);
+    } catch (err) {
+      say(err instanceof Error ? err.message : "That part can't change type on the page.");
+      return;
+    }
+    const a = anchor.current;
+    if (a && a.path.length === target.path.length && startsWith(a.path, target.path)) anchor.current = { ...a, tag: tag.toUpperCase() };
+    focusNext.current = { path: target.path, caret: "end" };
     setSelected(null);
-    apply(insertAfter(latest.current, found.element, markup));
+    apply(next);
   };
 
   /** Removes the selected block, or the section or figure around it (design D10). */
@@ -232,6 +271,13 @@ export function PageEditor({
       return;
     }
     setSelected(null);
+    // Removing the insertion point, or something before it, moves it.
+    const a = anchor.current;
+    if (a && startsWith(a.path, target.path)) anchor.current = null;
+    else if (a && startsWith(a.path, target.path.slice(0, -1))) {
+      const d = target.path.length - 1;
+      if (a.path[d] > target.path[d]) anchor.current = { ...a, path: a.path.map((v, k) => (k === d ? v - 1 : v)) };
+    }
     apply(removeElement(latest.current, found.element));
   };
 
@@ -262,7 +308,7 @@ export function PageEditor({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="flex items-center gap-1.5 text-xs text-[#757069] dark:text-[#948F86]">
-          <MousePointerClick className="w-3.5 h-3.5" /> Click any text to edit or format it. Click elsewhere to keep the change.
+          <MousePointerClick className="w-3.5 h-3.5" /> Click any text to edit it. Use the bar to add a text box or image after it.
         </p>
         <div className="flex items-center gap-1.5">
           <button type="button" className={btn} onClick={() => step(-1)} disabled={!historyState.canUndo} title="Undo (Ctrl+Z)">
@@ -274,7 +320,13 @@ export function PageEditor({
         </div>
       </div>
 
-      <FormatBar element={session?.element ?? null} />
+      <FormatBar
+        element={session?.element ?? null}
+        onTextBox={() => insert(NEW_BLOCK.p, [])}
+        onImage={() => imageInput.current?.click()}
+        imageBusy={imageBusy}
+        onBlockType={setBlockType}
+      />
 
       {notice && (
         <div role="status" className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200">
@@ -302,23 +354,11 @@ export function PageEditor({
         {selected && (
           <div
             role="toolbar"
-            aria-label="Add after this"
+            aria-label="This part"
             onPointerDown={(e) => e.preventDefault()}
             style={{ top: selected.top }}
             className="absolute left-1/2 -translate-x-1/2 -translate-y-full z-20 flex flex-wrap items-center gap-1 p-1.5 rounded-xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#BFD3F2] dark:border-[#2C3E5C] shadow-lg text-xs max-w-[95%]"
           >
-            <span className="px-1.5 font-semibold text-[#2563EB] flex items-center gap-1">
-              <ListChecks className="w-3.5 h-3.5" /> Add after this:
-            </span>
-            {INSERTS.map((it) => (
-              <button key={it.key} type="button" className={btn} onClick={() => insert(it.build(contributor), it.focus)}>
-                {it.icon} {it.label}
-              </button>
-            ))}
-            <button type="button" className={btn} disabled={imageBusy} onClick={() => imageInput.current?.click()}>
-              {imageBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />} Image
-            </button>
-            <span className="w-px h-5 bg-[#E8E3D9] dark:bg-[#33312E]" aria-hidden />
             <button type="button" className={removeBtn} onClick={() => remove(selected.block)} title="Remove this part from your draft">
               <X className="w-3.5 h-3.5" /> Remove
             </button>

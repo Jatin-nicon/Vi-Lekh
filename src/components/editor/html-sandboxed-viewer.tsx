@@ -64,14 +64,14 @@ export interface PageEditing {
   canEdit: (element: Element, root: Element) => boolean;
   /** What changed in a block (cleaned inner HTML and/or alignment), with its inner HTML before editing. */
   onCommit: (element: Element, root: Element, change: EditResult, originalHtml: string) => void;
-  /** The block being edited, with a way to drop its edit (e.g. before removing it), or null when none is. */
-  onSession?: (session: { element: HTMLElement; root: HTMLElement; cancel: () => void } | null) => void;
+  /** The block being edited, with ways to drop its edit (e.g. before removing it) or keep it now, or null when none is. */
+  onSession?: (session: { element: HTMLElement; root: HTMLElement; cancel: () => void; commit: () => void } | null) => void;
   /** The block being edited, or null; for the "Add after this" toolbar. */
   onSelect?: (selection: { element: Element; root: Element } | null) => void;
   /** A click on text that can't be edited on the page. */
   onUneditable?: (info: { element: Element; root: Element; text: string }) => void;
-  /** A block to open for editing after the next render (e.g. a section just inserted). */
-  takeFocusPath?: () => number[] | null;
+  /** A block to open for editing after the next render (e.g. a part just inserted), with all its text selected or the caret at the end. */
+  takeFocusPath?: () => { path: number[]; caret: "all" | "end" } | null;
 }
 
 const BASE_SANDBOX_CSS = `
@@ -553,6 +553,11 @@ function bindPageEditing(
         current.cancel();
         editingRef.current?.onSession?.(null);
       },
+      commit: () => {
+        if (session !== current) return;
+        resumeRef.current = null;
+        finish();
+      },
     });
     resumeRef.current = renderedPath(el, root);
     editingRef.current?.onSelect?.({ element: el, root });
@@ -597,11 +602,11 @@ function bindPageEditing(
 
   // Reopen the block that was being edited before the page re-rendered.
   const requested = editingRef.current?.takeFocusPath?.() ?? null;
-  const path = requested ?? resumeRef.current;
+  const path = requested?.path ?? resumeRef.current;
   if (path) {
     let el: Element | null = root;
     for (const i of path) el = el ? (Array.from(el.children).filter((c) => !c.matches("[data-vl-page-spacer], [data-vl-overlay], [data-vl-comment]"))[i] ?? null) : null;
-    if (el && el instanceof HTMLElement && editingRef.current?.canEdit(el, root)) requestAnimationFrame(() => open(el as HTMLElement, requested ? "all" : "end"));
+    if (el && el instanceof HTMLElement && editingRef.current?.canEdit(el, root)) requestAnimationFrame(() => open(el as HTMLElement, requested?.caret ?? "end"));
   }
 
   return () => {
