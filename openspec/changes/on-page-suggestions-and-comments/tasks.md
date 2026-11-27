@@ -2,7 +2,7 @@
 
 ## 1. Source mapping and splicing (D1, D2)
 
-- [ ] 1.1 Add `parse5` as a direct dependency and verify `npm run build` succeeds and the client bundle loads it only on the edit page
+- [x] 1.1 Add `parse5` as a direct dependency and verify `npm run build` succeeds and the client bundle loads it only on the edit page
 - [x] 1.2 Write `src/lib/editor/source-map.ts`: parse a draft with source locations, compute a rendered element's child-index path (skipping `[data-vl-page-spacer]` and `[data-vl-overlay]`), resolve it in the source tree (skipping the elements `prepareDocument` removes, for documents), and check tag and text. Verify with vitest tests on a fragment, a complete document with head styles, and an A4 note with spacers
 - [x] 1.3 Add `replaceInner(source, element, html)` and `insertAfter(source, element, html)` that splice by offsets. Verify with vitest that every character outside the edited range is unchanged for all 12 imported lessons, and that `diffSegments` reports exactly one changed segment after a one-paragraph edit
 - [x] 1.4 Add the inline clean-up for edited markup (allowed inline tags, no event attributes or scripts, http(s)/mailto links only). Verify with vitest cases for pasted styles, `<script>`, `onclick` and `javascript:` links

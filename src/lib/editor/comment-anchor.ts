@@ -1,5 +1,5 @@
 import type { CommentAnchor } from "@/lib/data/comments";
-import { elementAtPath, renderedPath } from "@/lib/editor/source-map";
+import { elementAtPath, renderedPath } from "@/lib/editor/dom-path";
 import { findBlock } from "@/lib/editor/page-editing";
 
 /**

@@ -1,5 +1,8 @@
 import { parse, parseFragment, type DefaultTreeAdapterMap } from "parse5";
 import { isHtmlDocument } from "@/lib/layout/document-html";
+import { APP_NODES, renderedPath } from "@/lib/editor/dom-path";
+
+export { renderedPath };
 
 /**
  * Maps an element of the rendered note back to its place in the note's HTML
@@ -18,8 +21,6 @@ export interface SourceTree {
   isDocument: boolean;
 }
 
-/** Elements the viewer adds to the rendered page; they are not in the source. */
-const APP_NODES = "[data-vl-page-spacer], [data-vl-overlay], [data-vl-comment]";
 /** Elements the document viewer removes from a document's body before showing it. */
 const REMOVED_IN_DOCUMENTS = new Set(["style", "script", "link", "meta", "title", "base", "noscript"]);
 
@@ -43,33 +44,6 @@ export function parseSource(html: string): SourceTree {
 function sourceChildren(parent: P5Parent, isDocument: boolean): P5Element[] {
   const kids = "content" in parent && parent.tagName === "template" ? (parent as DefaultTreeAdapterMap["template"]).content.childNodes : parent.childNodes;
   return kids.filter((n): n is P5Element => isElement(n) && !(isDocument && REMOVED_IN_DOCUMENTS.has(n.tagName)));
-}
-
-/** Child-index path of `el` below `root`, ignoring elements the viewer added. */
-export function renderedPath(el: Element, root: Element): number[] | null {
-  const path: number[] = [];
-  let node: Element | null = el;
-  while (node && node !== root) {
-    const parent: Element | null = node.parentElement;
-    if (!parent) return null;
-    const siblings = Array.from(parent.children).filter((c) => !c.matches(APP_NODES));
-    const i = siblings.indexOf(node);
-    if (i < 0) return null;
-    path.unshift(i);
-    node = parent;
-  }
-  return node === root ? path : null;
-}
-
-/** The rendered element at a child-index path, skipping the viewer's own nodes; the inverse of `renderedPath`. */
-export function elementAtPath(root: Element, path: number[]): Element | null {
-  let node: Element = root;
-  for (const i of path) {
-    const next: Element | undefined = Array.from(node.children).filter((c) => !c.matches(APP_NODES))[i];
-    if (!next) return null;
-    node = next;
-  }
-  return node;
 }
 
 export function resolvePath(tree: SourceTree, path: number[]): P5Element | null {

@@ -12,7 +12,7 @@ import { DOCUMENT_WIDTH, isHtmlDocument, prepareDocument } from "@/lib/layout/do
 import { bindFormFields } from "@/lib/layout/form-fields";
 import { bindLinks } from "@/lib/layout/links";
 import { findBlock, startEditing, type EditSession } from "@/lib/editor/page-editing";
-import { renderedPath } from "@/lib/editor/source-map";
+import { renderedPath } from "@/lib/editor/dom-path";
 import {
   PAGE_GAP,
   PAGE_HEIGHT,
