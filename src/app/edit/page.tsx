@@ -225,7 +225,6 @@ function EditContent() {
         currentRevisionId={currentRevisionId}
         currentHtml={html}
         userId={user.uid}
-        contributor={contributor}
       />
     );
   }

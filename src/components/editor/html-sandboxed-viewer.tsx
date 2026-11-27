@@ -11,6 +11,8 @@ import {
 import { DOCUMENT_WIDTH, isHtmlDocument, prepareDocument } from "@/lib/layout/document-html";
 import { bindFormFields } from "@/lib/layout/form-fields";
 import { bindLinks } from "@/lib/layout/links";
+import { findBlock, startEditing, type EditResult, type EditSession } from "@/lib/editor/page-editing";
+import { renderedPath } from "@/lib/editor/dom-path";
 import {
   PAGE_GAP,
   PAGE_HEIGHT,
@@ -50,6 +52,26 @@ interface HtmlSandboxedViewerProps {
   renderPageOverlay?: (pageIndex: number, info: PagedLayoutInfo) => React.ReactNode;
   /** Storage key for the note's fill-in fields. Without it they are read-only. */
   fieldsKey?: string;
+  /** Turns on editing on the page (suggest mode, design D3). */
+  editing?: PageEditing;
+  /** Receives the rendered note's content root after each render (null when it goes away), e.g. to mark changes. Paged mode. */
+  onContentRoot?: (root: HTMLElement | null) => void;
+}
+
+/** Callbacks for editing on the page; `root` is the note's content root in the shadow DOM. */
+export interface PageEditing {
+  /** Whether a block can be edited (its source can be found). */
+  canEdit: (element: Element, root: Element) => boolean;
+  /** What changed in a block (cleaned inner HTML and/or alignment), with its inner HTML before editing. */
+  onCommit: (element: Element, root: Element, change: EditResult, originalHtml: string) => void;
+  /** The block being edited, with ways to drop its edit (e.g. before removing it) or keep it now, or null when none is. */
+  onSession?: (session: { element: HTMLElement; root: HTMLElement; cancel: () => void; commit: () => void } | null) => void;
+  /** The block being edited, or null; for the "Add after this" toolbar. */
+  onSelect?: (selection: { element: Element; root: Element } | null) => void;
+  /** A click on text that can't be edited on the page. */
+  onUneditable?: (info: { element: Element; root: Element; text: string }) => void;
+  /** A block to open for editing after the next render (e.g. a part just inserted), with all its text selected or the caret at the end. */
+  takeFocusPath?: () => { path: number[]; caret: "all" | "end" } | null;
 }
 
 const BASE_SANDBOX_CSS = `
@@ -479,6 +501,9 @@ const PAGED_CSS = `
     overflow-wrap: break-word;
   }
   .vl-flow > :first-child { margin-top: 0; }
+  .vl-edit-mode :is(p, h1, h2, h3, h4, h5, h6, li, td, th, dt, dd, blockquote, figcaption, caption, summary) { cursor: text; }
+  .vl-edit-mode :is(p, h1, h2, h3, h4, h5, h6, li, td, th, blockquote, figcaption):hover:not([data-vl-editing]) { outline: 1px dashed rgba(37, 99, 235, 0.45); outline-offset: 2px; }
+  [data-vl-editing] { outline: 2px solid #2563EB !important; outline-offset: 2px; border-radius: 2px; background: rgba(37, 99, 235, 0.05); }
   [data-vl-overlay] a:hover { opacity: 0.8; }
   /* Page geometry must not change in print, or breaks would move (design D4). */
   @media print {
@@ -492,6 +517,106 @@ const PAGED_CSS = `
 `;
 
 const KATEX_CSS_URL = "https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css";
+
+/**
+ * Click-to-edit on the rendered page: one block at a time, committed when
+ * editing moves elsewhere. Returns a cleanup function.
+ */
+function bindPageEditing(
+  flow: HTMLElement,
+  isDocument: boolean,
+  editingRef: React.MutableRefObject<PageEditing | undefined>,
+  resumeRef: React.MutableRefObject<number[] | null>,
+): () => void {
+  const root = (isDocument ? flow.querySelector<HTMLElement>(".vl-doc") : flow) ?? flow;
+  flow.classList.add("vl-edit-mode");
+  let session: EditSession | null = null;
+
+  const finish = () => {
+    if (!session) return;
+    const s = session;
+    session = null;
+    const change = s.finish();
+    editingRef.current?.onSession?.(null);
+    if (change) editingRef.current?.onCommit(s.element, root, change, s.original);
+  };
+  const open = (el: HTMLElement, caret: "none" | "end" | "all") => {
+    const current = startEditing(el);
+    session = current;
+    editingRef.current?.onSession?.({
+      element: el,
+      root,
+      cancel: () => {
+        if (session !== current) return;
+        session = null;
+        resumeRef.current = null;
+        current.cancel();
+        editingRef.current?.onSession?.(null);
+      },
+      commit: () => {
+        if (session !== current) return;
+        resumeRef.current = null;
+        finish();
+      },
+    });
+    resumeRef.current = renderedPath(el, root);
+    editingRef.current?.onSelect?.({ element: el, root });
+    if (caret !== "none") {
+      el.focus();
+      const sel = (el.getRootNode() as ShadowRoot & { getSelection?: () => Selection | null }).getSelection?.() ?? el.ownerDocument.getSelection();
+      sel?.selectAllChildren(el);
+      if (caret === "end") sel?.collapseToEnd();
+    }
+  };
+
+  const onDown = (e: PointerEvent) => {
+    const target = e.composedPath()[0] as Element;
+    if (session && session.element.contains(target)) return;
+    const hit = findBlock(target, root);
+    resumeRef.current = null;
+    finish();
+    if (hit.kind === "editable" && editingRef.current?.canEdit(hit.element, root)) {
+      open(hit.element, "none");
+      return;
+    }
+    editingRef.current?.onSelect?.(null);
+    if (hit.kind !== "none") {
+      editingRef.current?.onUneditable?.({ element: hit.element, root, text: (hit.element.textContent ?? "").replace(/\s+/g, " ").trim() });
+    }
+  };
+  const onFocusOut = (e: FocusEvent) => {
+    if (!session || e.target !== session.element) return;
+    // Typing a link's address in the formatting bar keeps the block open.
+    if ((e.relatedTarget as Element | null)?.closest?.("[data-vl-keep-editing]")) return;
+    resumeRef.current = null;
+    finish();
+  };
+  // Links and other actions inside the note do nothing while editing.
+  const onClick = (e: MouseEvent) => {
+    if ((e.target as Element)?.closest?.("a[href]")) e.preventDefault();
+  };
+
+  flow.addEventListener("pointerdown", onDown, true);
+  flow.addEventListener("focusout", onFocusOut);
+  flow.addEventListener("click", onClick, true);
+
+  // Reopen the block that was being edited before the page re-rendered.
+  const requested = editingRef.current?.takeFocusPath?.() ?? null;
+  const path = requested?.path ?? resumeRef.current;
+  if (path) {
+    let el: Element | null = root;
+    for (const i of path) el = el ? (Array.from(el.children).filter((c) => !c.matches("[data-vl-page-spacer], [data-vl-overlay], [data-vl-comment]"))[i] ?? null) : null;
+    if (el && el instanceof HTMLElement && editingRef.current?.canEdit(el, root)) requestAnimationFrame(() => open(el as HTMLElement, requested?.caret ?? "end"));
+  }
+
+  return () => {
+    flow.removeEventListener("pointerdown", onDown, true);
+    flow.removeEventListener("focusout", onFocusOut);
+    flow.removeEventListener("click", onClick, true);
+    // Keep anything typed while the page was re-rendering.
+    finish();
+  };
+}
 
 function isDarkTheme(theme?: "light" | "dark") {
   return (
@@ -509,6 +634,8 @@ export function HtmlSandboxedViewer({
   onLayout,
   renderPageOverlay,
   fieldsKey,
+  editing,
+  onContentRoot,
 }: HtmlSandboxedViewerProps) {
   const outerRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -536,6 +663,17 @@ export function HtmlSandboxedViewer({
   const fit = fitWidth > 0 ? Math.min(1, fitWidth / pageWidth) : 1;
   const scale = paged ? fit * (zoom > 0 ? zoom : 1) : 1;
 
+  const editingRef = useRef(editing);
+  useEffect(() => {
+    editingRef.current = editing;
+  }, [editing]);
+  const isEditing = Boolean(editing);
+  /** Block to reopen after the page re-renders (its path in the content). */
+  const resumeRef = useRef<number[] | null>(null);
+  const onContentRootRef = useRef(onContentRoot);
+  useEffect(() => {
+    onContentRootRef.current = onContentRoot;
+  }, [onContentRoot]);
   const onLayoutRef = useRef(onLayout);
   useEffect(() => {
     onLayoutRef.current = onLayout;
@@ -598,7 +736,8 @@ export function HtmlSandboxedViewer({
 
     const flow = shadow.querySelector<HTMLElement>(".vl-flow")!;
     const unbindFields = bindFormFields(flow, fieldsKey);
-    const links = bindLinks(flow);
+    const links = isEditing ? { refresh() {}, cleanup() {} } : bindLinks(flow);
+    const stopEditing = isEditing ? bindPageEditing(flow, isDocument, editingRef, resumeRef) : () => {};
     let cancelled = false;
     let frame = 0;
     const run = () => {
@@ -620,6 +759,7 @@ export function HtmlSandboxedViewer({
 
     // Re-run after fonts, images and the KaTeX stylesheet load — never on resize.
     run();
+    onContentRootRef.current?.((isDocument ? flow.querySelector<HTMLElement>(".vl-doc") : flow) ?? flow);
     loadNoteFonts().then(schedule);
     const link = shadow.querySelector("link");
     link?.addEventListener("load", schedule);
@@ -632,11 +772,13 @@ export function HtmlSandboxedViewer({
       cancelled = true;
       unbindFields();
       links.cleanup();
+      stopEditing();
+      onContentRootRef.current?.(null);
       cancelAnimationFrame(frame);
       link?.removeEventListener("load", schedule);
       images.forEach((img) => img.removeEventListener("load", schedule));
     };
-  }, [html, theme, paged, renderSheets, fieldsKey, isDocument]);
+  }, [html, theme, paged, renderSheets, fieldsKey, isDocument, isEditing]);
 
   if (!paged) {
     return (
