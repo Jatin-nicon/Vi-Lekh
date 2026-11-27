@@ -229,6 +229,29 @@ function EditContent() {
     );
   }
 
+  // Suggest mode never falls through to the HTML code editor below.
+  if (suggestMode) {
+    return (
+      <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] p-8 text-center flex flex-col items-center justify-center gap-3">
+        <h2 className="text-lg font-bold">{note ? "This note can't take suggestions yet" : "Note not found"}</h2>
+        <p className="text-xs text-[#757069] max-w-sm">
+          {error
+            ? error
+            : note
+              ? "It has no published content to suggest changes on. Try again once the course editor has published it."
+              : "This note doesn't exist or you can't open it."}
+        </p>
+        <Link
+          href={note ? `/notes?course=${note.course_id}&note=${note.id}` : "/"}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#A85D44] text-white text-xs font-semibold"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back to the note</span>
+        </Link>
+      </div>
+    );
+  }
+
   if (!noteId || !note || isAuthorized === false) {
     return (
       <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] p-8 text-center flex flex-col items-center justify-center">
