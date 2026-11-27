@@ -27,7 +27,7 @@
 - [x] 4.2 Add the "Comment" button on text selection and a block picker, with the new-comment form (2,000 characters max, sign-in prompt when signed out). Verify in Chrome that a comment posts with the selected quote
 - [x] 4.3 Add the Comments button with the open-thread count and the side panel (threads, replies, resolve/reopen, edit, delete, resolved list, earlier-version note), and scroll-to-highlight. Verify in Chrome, with stubbed data, each action and the jump to an anchor
 - [x] 4.4 Add "Open comments" to the review area, limited by row-level security to the reviewer's courses. Verify a course X editor sees only course X threads
-- [ ] 4.5 When an on-page edit can't be mapped back to the source, show a message with a "Leave a comment" action that opens the comment form quoting that text. Verify with a test document whose rendered tree differs from the source, and that the draft is unchanged
+- [x] 4.5 When an on-page edit can't be mapped back to the source, show a message with a "Leave a comment" action that opens the comment form quoting that text. Verify with a test document whose rendered tree differs from the source, and that the draft is unchanged
 
 ## 5. Release
 

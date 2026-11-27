@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Columns2, Loader2, Send, Trash2, MessageSquareWarning, GitPullRequestDraft } from "lucide-react";
 import { PageEditor } from "@/components/editor/page-editor";
+import { LeaveCommentDialog } from "@/components/reader/note-comments";
+import type { CommentAnchor } from "@/lib/data/comments";
 import { ReviewChanges } from "@/components/editor/review-changes";
 import { blocksToHtml } from "@/lib/editor/block-converter";
 import { getVersion } from "@/lib/data/versions";
@@ -52,6 +54,13 @@ export function SuggestEditor({
   const [review, setReview] = useState<"submit" | "look" | null>(null);
   const [base, setBase] = useState<{ html: string; label: string } | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  /** A part that can't be edited on the page, being commented on instead. */
+  const [commentOn, setCommentOn] = useState<CommentAnchor | null>(null);
+  const [commentSent, setCommentSent] = useState(false);
+  const commentInstead = useCallback((anchor: CommentAnchor) => {
+    setCommentSent(false);
+    setCommentOn(anchor);
+  }, []);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef({ id: "", html: "" });
 
@@ -164,7 +173,31 @@ export function SuggestEditor({
           </div>
         )}
 
-        <PageEditor html={html} onChange={onChange} contributor={contributor} />
+        {commentSent && (
+          <div role="status" className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/50 text-xs text-emerald-900 dark:text-emerald-200">
+            Your comment was sent to the course&apos;s reviewers. You can find it under Comments on the note.
+          </div>
+        )}
+
+        <PageEditor
+          html={html}
+          onChange={onChange}
+          contributor={contributor}
+          onUneditable={commentInstead}
+        />
+        {commentOn && (
+          <LeaveCommentDialog
+            noteId={note.id}
+            revisionId={currentRevisionId}
+            authorId={userId}
+            anchor={commentOn}
+            onClose={() => setCommentOn(null)}
+            onSent={() => {
+              setCommentOn(null);
+              setCommentSent(true);
+            }}
+          />
+        )}
 
         <div className="p-5 rounded-2xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           {confirmDiscard ? (

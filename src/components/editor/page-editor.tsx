@@ -1,11 +1,13 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, FlaskConical, ImagePlus, ListChecks, Loader2, MousePointerClick, Pilcrow, Redo2, Undo2, User, X } from "lucide-react";
+import { BookOpen, FlaskConical, ImagePlus, ListChecks, Loader2, MessageSquarePlus, MousePointerClick, Pilcrow, Redo2, Undo2, User, X } from "lucide-react";
 import { HtmlSandboxedViewer, type PageEditing } from "@/components/editor/html-sandboxed-viewer";
 import { renderMathInHtml } from "@/lib/editor/math-html";
 import { insertAfter, locate, locateEdited, parseSource, renderedPath, replaceInner, type SourceTree } from "@/lib/editor/source-map";
 import { insertionAnchor } from "@/lib/editor/page-editing";
+import { blockAnchor } from "@/lib/editor/comment-anchor";
+import type { CommentAnchor } from "@/lib/data/comments";
 import { contributionSnippet, imageSnippet, type ContributionKind, type Contributor } from "@/lib/editor/contribution-snippets";
 import { uploadImage } from "@/lib/services/image-upload";
 
@@ -42,8 +44,8 @@ export function PageEditor({
   html: string;
   onChange: (html: string) => void;
   contributor: Contributor | null;
-  /** A click on text that can't be edited on the page. */
-  onUneditable?: (text: string) => void;
+  /** "Leave a comment" on text that can't be edited on the page; without it, only a message shows. */
+  onUneditable?: (anchor: CommentAnchor) => void;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const latest = useRef(html);
@@ -53,6 +55,12 @@ export function PageEditor({
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const [selected, setSelected] = useState<Selected | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** The part that couldn't be edited, offered for a comment instead. */
+  const [uneditable, setUneditable] = useState<CommentAnchor | null>(null);
+  const say = (text: string) => {
+    setNotice(text);
+    setUneditable(null);
+  };
   const [imageBusy, setImageBusy] = useState(false);
   const imageInput = useRef<HTMLInputElement>(null);
 
@@ -128,7 +136,7 @@ export function PageEditor({
         probe.innerHTML = original;
         const found = path && locateEdited(sourceTree(), path, el.tagName, probe.textContent ?? "");
         if (!found || !found.ok) {
-          setNotice("That change couldn't be saved because the page changed underneath it. Please make it again.");
+          say("That change couldn't be saved because the page changed underneath it. Please make it again.");
           return;
         }
         apply(replaceInner(latest.current, found.element, inner));
@@ -141,6 +149,7 @@ export function PageEditor({
         if (!anchorPath || !wrap) return setSelected(null);
         const rect = sel.element.getBoundingClientRect();
         setNotice(null);
+        setUneditable(null);
         setSelected({
           anchorPath,
           anchorTag: anchor.tagName,
@@ -148,10 +157,14 @@ export function PageEditor({
           top: Math.max(0, rect.top - wrap.getBoundingClientRect().top - 44),
         });
       },
-      onUneditable: ({ text }) => {
+      onUneditable: ({ element, root, text }) => {
         setSelected(null);
-        setNotice("This part can't be edited on the page.");
-        onUneditable?.(text);
+        setNotice(
+          onUneditable
+            ? "This part can't be edited on the page. You can leave a comment about it for the course's reviewers instead."
+            : "This part can't be edited on the page.",
+        );
+        setUneditable(text ? (blockAnchor(element, root) ?? { quote: text }) : null);
       },
       takeFocusPath: () => {
         const p = focusNext.current;
@@ -167,7 +180,7 @@ export function PageEditor({
     if (!selected) return;
     const found = locateEdited(sourceTree(), selected.anchorPath, selected.anchorTag, selected.anchorText);
     if (!found.ok) {
-      setNotice("Couldn't add it there. Click the text again and retry.");
+      say("Couldn't add it there. Click the text again and retry.");
       return;
     }
     const at = selected.anchorPath;
@@ -180,7 +193,7 @@ export function PageEditor({
   const onImage = async (file: File | undefined) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      setNotice(`“${file.name}” is not an image. Choose a JPEG, PNG, WebP, GIF or SVG file.`);
+      say(`“${file.name}” is not an image. Choose a JPEG, PNG, WebP, GIF or SVG file.`);
       return;
     }
     setImageBusy(true);
@@ -188,7 +201,7 @@ export function PageEditor({
       const src = await uploadImage(file);
       insert(imageSnippet(src, file.name), [1]);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "The image could not be added.");
+      say(err instanceof Error ? err.message : "The image could not be added.");
     } finally {
       setImageBusy(false);
     }
@@ -217,7 +230,20 @@ export function PageEditor({
       {notice && (
         <div role="status" className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200">
           <span className="flex-1">{notice}</span>
-          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className="cursor-pointer">
+          {onUneditable && uneditable && (
+            <button
+              type="button"
+              onClick={() => {
+                onUneditable(uneditable);
+                setNotice(null);
+                setUneditable(null);
+              }}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-amber-300 dark:border-amber-800 font-semibold cursor-pointer"
+            >
+              <MessageSquarePlus className="w-3.5 h-3.5" /> Leave a comment
+            </button>
+          )}
+          <button type="button" onClick={() => { setNotice(null); setUneditable(null); }} aria-label="Dismiss" className="cursor-pointer">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>

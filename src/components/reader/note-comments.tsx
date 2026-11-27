@@ -347,6 +347,58 @@ export function NoteComments({
   );
 }
 
+/**
+ * "Leave a comment" from suggest mode (task 4.5): a comment on the published
+ * version about a part that can't be edited on the page.
+ */
+export function LeaveCommentDialog({
+  noteId,
+  revisionId,
+  authorId,
+  anchor,
+  onClose,
+  onSent,
+}: {
+  noteId: string;
+  revisionId: string;
+  authorId: string;
+  anchor: CommentAnchor;
+  onClose: () => void;
+  onSent: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return createPortal(
+    <div className="fixed inset-0 z-[96] flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-label="Leave a comment"
+        className="w-full max-w-md rounded-2xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#E8E3D9] dark:border-[#33312E] shadow-2xl p-4 space-y-3 text-xs text-[#2D2926] dark:text-[#E3DFD7]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <MessageSquarePlus className="w-4 h-4 text-[#A85D44]" /> Leave a comment
+        </h2>
+        <p className="text-[#757069] dark:text-[#948F86]">
+          Describe the change you&apos;d like. Only you and the course&apos;s reviewers see it, under Comments on the note.
+        </p>
+        <CommentForm
+          quote={anchor.quote}
+          onCancel={onClose}
+          onSubmit={async (body) => {
+            await addComment({ noteId, authorId, revisionId, anchor, body });
+            onSent();
+          }}
+        />
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function SignInPrompt({ onSignIn }: { onSignIn: () => Promise<void> }) {
   return (
     <div className="p-3 rounded-xl border border-[#E8E3D9] dark:border-[#33312E] bg-white dark:bg-[#181716] space-y-2">
@@ -363,7 +415,7 @@ function SignInPrompt({ onSignIn }: { onSignIn: () => Promise<void> }) {
 }
 
 /** A text box with a character limit, used for new comments, replies and edits. */
-function CommentForm({
+export function CommentForm({
   quote,
   initial = "",
   submitLabel = "Comment",

@@ -11,6 +11,8 @@ import { Suspense, useEffect, useState } from "react";
 import { notFound, useSearchParams } from "next/navigation";
 import { PageEditor } from "@/components/editor/page-editor";
 import { ReviewChanges } from "@/components/editor/review-changes";
+import { LeaveCommentDialog } from "@/components/reader/note-comments";
+import type { CommentAnchor } from "@/lib/data/comments";
 import { SAMPLE_HTML } from "../sample-note";
 
 export default function PageEditCheckPage() {
@@ -29,6 +31,8 @@ function Harness() {
   const [original, setOriginal] = useState<string | null>(html);
   const [review, setReview] = useState(false);
   const [continued, setContinued] = useState(false);
+  const [commentOn, setCommentOn] = useState<CommentAnchor | null>(null);
+  const [sent, setSent] = useState(false);
   useEffect(() => {
     if (!doc) return;
     void fetch(doc)
@@ -41,7 +45,21 @@ function Harness() {
   if (html === null) return <main className="p-20 text-sm">Loading…</main>;
   return (
     <main className="max-w-5xl mx-auto p-4 pt-20 space-y-4">
-      <PageEditor html={html} onChange={setHtml} contributor={{ id: "dev-user", name: "Asha Rao" }} />
+      <PageEditor html={html} onChange={setHtml} contributor={{ id: "dev-user", name: "Asha Rao" }} onUneditable={setCommentOn} />
+      {commentOn && (
+        <LeaveCommentDialog
+          noteId="dev-note"
+          revisionId="dev-rev-1"
+          authorId="dev-user"
+          anchor={commentOn}
+          onClose={() => setCommentOn(null)}
+          onSent={() => {
+            setCommentOn(null);
+            setSent(true);
+          }}
+        />
+      )}
+      <output id="dev-comment-sent">{String(sent)}</output>
       <button type="button" id="dev-review" onClick={() => setReview(true)} className="px-3 py-1 border rounded">
         Review changes
       </button>
