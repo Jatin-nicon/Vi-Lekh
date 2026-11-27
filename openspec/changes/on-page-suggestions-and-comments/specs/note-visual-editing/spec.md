@@ -54,6 +54,48 @@ When a block is selected in the Page view, the editor SHALL offer to add, direct
 - **WHEN** the contributor chooses "Add after this → Image" and selects an image file
 - **THEN** the optimized image appears after the block, and a non-image file shows an error and adds nothing
 
+### Requirement: Remove a part
+When a block is selected in the Page view, the editor SHALL offer to remove it. Removing SHALL delete only that block from the draft and leave every other character unchanged. When the block is inside a section the contributor added (Case Study, My Experience or Findings), the editor SHALL also offer to remove the whole section. Removal SHALL be possible for the instructor's blocks as well as the contributor's.
+
+#### Scenario: Remove a paragraph the contributor added
+- **WHEN** the contributor selects a paragraph they added and presses ×
+- **THEN** the paragraph is gone from the page and the draft, and the rest of the draft is unchanged
+
+#### Scenario: Remove the instructor's paragraph
+- **WHEN** the contributor removes one of the note's own paragraphs
+- **THEN** it is removed from the draft and "Review your changes" shows it as removed
+
+#### Scenario: Remove an added section
+- **WHEN** the contributor selects text inside a Case Study section they added and chooses Remove section
+- **THEN** the whole section is removed
+
+#### Scenario: Undo a removal
+- **WHEN** the contributor removes a part and then chooses Undo
+- **THEN** the draft is exactly as it was before the removal
+
+### Requirement: Format text
+A formatting bar at the top of the Page view SHALL stay visible while scrolling and act on the block being edited: bold, italic, underline, strikethrough, link, palette text colour and highlight, alignment (left, centre, right, justify) and clear formatting. Inline formats SHALL apply to the selected text and alignment to the whole block, changing nothing outside that block. The controls SHALL be disabled when no block is being edited.
+
+#### Scenario: Bold a word
+- **WHEN** the contributor selects a word in the block being edited and presses Bold
+- **THEN** the word is bold on the page and in the draft
+
+#### Scenario: Colour a phrase
+- **WHEN** the contributor selects a phrase and picks a colour from the palette
+- **THEN** the phrase shows in that colour and only that phrase changes in the draft
+
+#### Scenario: Centre a paragraph
+- **WHEN** the contributor chooses Centre while editing a paragraph
+- **THEN** the paragraph is centred and only its opening tag changes in the draft
+
+#### Scenario: Clear formatting
+- **WHEN** the contributor selects formatted text and chooses Clear formatting
+- **THEN** the text keeps its words but loses the bold, italic, underline, strikethrough, colour and highlight
+
+#### Scenario: Nothing being edited
+- **WHEN** no block is being edited
+- **THEN** the formatting controls are disabled
+
 ### Requirement: Parts that can't be edited on the page
 When the contributor clicks a block whose change can't be safely written back into the note's HTML, the system SHALL NOT edit it, SHALL say that this part can't be edited on the page, and SHALL offer to leave a comment about it instead.
 

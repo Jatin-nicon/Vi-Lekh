@@ -23,6 +23,26 @@ describe("cleanInline", () => {
   });
 });
 
+describe("palette formatting", () => {
+  it("keeps strikethrough and palette colours, drops other colours and properties", () => {
+    expect(cleanInline(`<s>old</s> <span style="color: #dc2626">red</span> <mark style="background-color: rgba(250, 204, 21, 0.4)">hi</mark>`)).toBe(
+      `<s>old</s> <span style="color: #dc2626">red</span> <mark style="background-color: rgba(250, 204, 21, 0.4)">hi</mark>`,
+    );
+    expect(cleanInline(`<span style="color: #123456">x</span> <span style="color: #dc2626; font-size: 40px">y</span>`)).toBe(
+      `<span>x</span> <span style="color: #dc2626">y</span>`,
+    );
+    expect(cleanInline(`<mark style="color: #dc2626">z</mark>`)).toBe(`<mark>z</mark>`);
+  });
+
+  it("treats blocks with palette colours as editable, and other styles as not", () => {
+    const p = document.createElement("p");
+    p.innerHTML = `A <span style="color: #2563eb">b</span> <s>c</s>`;
+    expect(isInlineOnly(p)).toBe(true);
+    p.innerHTML = `A <span style="color: #2563eb; font-weight: 700">b</span>`;
+    expect(isInlineOnly(p)).toBe(false);
+  });
+});
+
 describe("isInlineOnly", () => {
   it("allows blocks with simple inline markup only", () => {
     const p = document.createElement("p");

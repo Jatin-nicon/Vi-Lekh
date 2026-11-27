@@ -19,6 +19,20 @@ reviews and merges your suggestion.
   to add it after that part. A new section is credited to you and opens for
   typing. If you clicked a list item or a table cell, the new part goes after
   the whole list or table.
+- **Remove something:** the same bar has **× Remove**, which takes out the
+  part you clicked, whether you added it or it was already in the note.
+  Inside a Case Study, My Experience or Findings section you added, or an
+  image, **Remove section** or **Remove image** takes out the whole thing.
+  Removed parts show in red when you review your changes.
+- **Format text:** the formatting bar at the top of the page stays in view as
+  you scroll. Click into a part, select some text, then choose **Bold**,
+  **Italic**, **Underline**, **Strikethrough**, a **text colour**, a
+  **highlight**, or **Link** (type the address and press Enter). **Clear
+  formatting** removes all of these from the selected text. The alignment
+  buttons (left, centre, right, justify) apply to the whole part.
+  **Ctrl+B**, **Ctrl+I** and **Ctrl+U** (**⌘B**, **⌘I** and **⌘U** on a Mac)
+  also work. Colours come from a small set that reads well on light and dark
+  pages.
 - **Undo and redo:** use the buttons, or **Ctrl+Z** and **Ctrl+Y** (or
   **⌘Z** and **⌘⇧Z** on a Mac) when you aren't typing in a part.
 - **Parts you can't edit:** drawings, answer boxes and some formatted parts,

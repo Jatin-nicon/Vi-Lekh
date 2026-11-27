@@ -122,8 +122,54 @@ export function replaceInner(html: string, el: P5Element, inner: string): string
   return html.slice(0, start) + inner + html.slice(end);
 }
 
+/** Inserts markup on a new line after an element (so removing it again restores the source exactly). */
 export function insertAfter(html: string, el: P5Element, markup: string): string {
   const end = el.sourceCodeLocation?.endOffset;
   if (end === undefined) throw new Error("No source location.");
-  return html.slice(0, end) + "\n" + markup + html.slice(end);
+  return html.slice(0, end) + "\n" + markup.replace(/\s+$/, "") + html.slice(end);
+}
+
+/**
+ * Removes an element from the source (design D10). When it starts its own
+ * line, the line break and indentation before it go too, so no blank line
+ * is left behind.
+ */
+export function removeElement(html: string, el: P5Element): string {
+  const loc = el.sourceCodeLocation;
+  if (!loc) throw new Error("No source location.");
+  let start = loc.startOffset;
+  let i = start;
+  while (i > 0 && (html[i - 1] === " " || html[i - 1] === "\t")) i--;
+  if (html[i - 1] === "\n") start = html[i - 2] === "\r" ? i - 2 : i - 1;
+  return html.slice(0, start) + html.slice(loc.endOffset);
+}
+
+const escapeAttr = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+
+/**
+ * Sets (or with null, removes) one CSS property in an element's start-tag
+ * `style`, keeping its other declarations and attributes as written
+ * (design D11). Everything outside the start tag stays the same.
+ */
+export function setStartTagStyle(html: string, el: P5Element, property: string, value: string | null): string {
+  const loc = el.sourceCodeLocation;
+  if (!loc?.startTag) throw new Error("No source location.");
+  const current = el.attrs.find((a) => a.name === "style")?.value ?? "";
+  const kept = current
+    .split(";")
+    .map((d) => d.trim())
+    .filter((d) => d && d.split(":")[0].trim().toLowerCase() !== property.toLowerCase());
+  if (value) kept.push(`${property}: ${value}`);
+  const style = kept.join("; ");
+  const attrLoc = loc.attrs?.style;
+  if (attrLoc) {
+    if (style) return html.slice(0, attrLoc.startOffset) + `style="${escapeAttr(style)}"` + html.slice(attrLoc.endOffset);
+    let start = attrLoc.startOffset;
+    while (start > loc.startTag.startOffset && /\s/.test(html[start - 1])) start--;
+    return html.slice(0, start) + html.slice(attrLoc.endOffset);
+  }
+  if (!style) return html;
+  const tagEnd = loc.startTag.endOffset;
+  const at = html[tagEnd - 2] === "/" ? tagEnd - 2 : tagEnd - 1;
+  return html.slice(0, at) + ` style="${escapeAttr(style)}"` + html.slice(at);
 }

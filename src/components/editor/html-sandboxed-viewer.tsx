@@ -11,7 +11,7 @@ import {
 import { DOCUMENT_WIDTH, isHtmlDocument, prepareDocument } from "@/lib/layout/document-html";
 import { bindFormFields } from "@/lib/layout/form-fields";
 import { bindLinks } from "@/lib/layout/links";
-import { findBlock, startEditing, type EditSession } from "@/lib/editor/page-editing";
+import { findBlock, startEditing, type EditResult, type EditSession } from "@/lib/editor/page-editing";
 import { renderedPath } from "@/lib/editor/dom-path";
 import {
   PAGE_GAP,
@@ -62,8 +62,10 @@ interface HtmlSandboxedViewerProps {
 export interface PageEditing {
   /** Whether a block can be edited (its source can be found). */
   canEdit: (element: Element, root: Element) => boolean;
-  /** A block's edited inner HTML, already cleaned, with its inner HTML before editing. */
-  onCommit: (element: Element, root: Element, innerHtml: string, originalHtml: string) => void;
+  /** What changed in a block (cleaned inner HTML and/or alignment), with its inner HTML before editing. */
+  onCommit: (element: Element, root: Element, change: EditResult, originalHtml: string) => void;
+  /** The block being edited, with a way to drop its edit (e.g. before removing it), or null when none is. */
+  onSession?: (session: { element: HTMLElement; root: HTMLElement; cancel: () => void } | null) => void;
   /** The block being edited, or null; for the "Add after this" toolbar. */
   onSelect?: (selection: { element: Element; root: Element } | null) => void;
   /** A click on text that can't be edited on the page. */
@@ -534,11 +536,24 @@ function bindPageEditing(
     if (!session) return;
     const s = session;
     session = null;
-    const inner = s.finish();
-    if (inner !== null) editingRef.current?.onCommit(s.element, root, inner, s.original);
+    const change = s.finish();
+    editingRef.current?.onSession?.(null);
+    if (change) editingRef.current?.onCommit(s.element, root, change, s.original);
   };
   const open = (el: HTMLElement, caret: "none" | "end" | "all") => {
-    session = startEditing(el);
+    const current = startEditing(el);
+    session = current;
+    editingRef.current?.onSession?.({
+      element: el,
+      root,
+      cancel: () => {
+        if (session !== current) return;
+        session = null;
+        resumeRef.current = null;
+        current.cancel();
+        editingRef.current?.onSession?.(null);
+      },
+    });
     resumeRef.current = renderedPath(el, root);
     editingRef.current?.onSelect?.({ element: el, root });
     if (caret !== "none") {
@@ -566,6 +581,8 @@ function bindPageEditing(
   };
   const onFocusOut = (e: FocusEvent) => {
     if (!session || e.target !== session.element) return;
+    // Typing a link's address in the formatting bar keeps the block open.
+    if ((e.relatedTarget as Element | null)?.closest?.("[data-vl-keep-editing]")) return;
     resumeRef.current = null;
     finish();
   };

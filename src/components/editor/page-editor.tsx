@@ -1,10 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, FlaskConical, ImagePlus, ListChecks, Loader2, MessageSquarePlus, MousePointerClick, Pilcrow, Redo2, Undo2, User, X } from "lucide-react";
+import { BookOpen, ChevronUp, FlaskConical, ImagePlus, ListChecks, Loader2, MessageSquarePlus, MousePointerClick, Pilcrow, Redo2, Undo2, User, X } from "lucide-react";
 import { HtmlSandboxedViewer, type PageEditing } from "@/components/editor/html-sandboxed-viewer";
 import { renderMathInHtml } from "@/lib/editor/math-html";
-import { insertAfter, locate, locateEdited, parseSource, renderedPath, replaceInner, type SourceTree } from "@/lib/editor/source-map";
+import { insertAfter, locate, locateEdited, parseSource, removeElement, renderedPath, renderedText, replaceInner, setStartTagStyle, type SourceTree } from "@/lib/editor/source-map";
+import { FormatBar } from "@/components/editor/format-bar";
 import { insertionAnchor } from "@/lib/editor/page-editing";
 import { blockAnchor } from "@/lib/editor/comment-anchor";
 import type { CommentAnchor } from "@/lib/data/comments";
@@ -21,14 +22,30 @@ const INSERTS: { key: string; label: string; icon: React.ReactNode; focus: numbe
   { key: "paragraph", label: "Paragraph", icon: <Pilcrow className="w-3.5 h-3.5" />, focus: [], build: () => "<p>New paragraph</p>\n" },
 ];
 
+/** A rendered element found again in the source by its path, tag and text (design D2). */
+interface Target {
+  path: number[];
+  tag: string;
+  text: string;
+}
+
 interface Selected {
-  /** Path of the block being edited, and of where new sections go after it. */
+  /** Where new sections go: after the block, or after its whole list or table. */
   anchorPath: number[];
   anchorTag: string;
   anchorText: string;
-  /** Position of the toolbar inside the editor, in CSS pixels. */
+  /** The block itself, for removing it (design D10). */
+  block: Target;
+  /** The added section or figure around the block, which can be removed as a whole. */
+  container: (Target & { label: "section" | "image" }) | null;
+  /** Where the toolbar's bottom edge goes inside the editor (just above the block), in CSS pixels. */
   top: number;
 }
+
+const targetOf = (el: Element, root: Element): Target | null => {
+  const path = renderedPath(el, root);
+  return path ? { path, tag: el.tagName, text: renderedText(el) } : null;
+};
 
 /**
  * Suggest mode's Page view (design D3–D5): the draft rendered like the
@@ -54,6 +71,8 @@ export function PageEditor({
   const history = useRef<{ stack: string[]; index: number }>({ stack: [html], index: 0 });
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const [selected, setSelected] = useState<Selected | null>(null);
+  /** The block being edited, for the formatting bar, and a way to drop its edit before removing it. */
+  const [session, setSession] = useState<{ element: HTMLElement; cancel: () => void } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   /** The part that couldn't be edited, offered for a comment instead. */
   const [uneditable, setUneditable] = useState<CommentAnchor | null>(null);
@@ -130,7 +149,7 @@ export function PageEditor({
   const editing = useMemo<PageEditing>(
     () => ({
       canEdit: (el, root) => locate(sourceTree(), el, root).ok,
-      onCommit: (el, root, inner, original) => {
+      onCommit: (el, root, change, original) => {
         const path = renderedPath(el, root);
         const probe = document.createElement("div");
         probe.innerHTML = original;
@@ -139,8 +158,13 @@ export function PageEditor({
           say("That change couldn't be saved because the page changed underneath it. Please make it again.");
           return;
         }
-        apply(replaceInner(latest.current, found.element, inner));
+        let next = latest.current;
+        if (change.inner !== null) next = replaceInner(next, found.element, change.inner);
+        // The inner change comes after the start tag, so its offsets still hold (design D11).
+        if (change.align !== undefined) next = setStartTagStyle(next, found.element, "text-align", change.align || null);
+        apply(next);
       },
+      onSession: (s) => setSession(s ? { element: s.element, cancel: s.cancel } : null),
       onSelect: (sel) => {
         if (!sel) return setSelected(null);
         const anchor = insertionAnchor(sel.element, sel.root);
@@ -148,13 +172,21 @@ export function PageEditor({
         const wrap = wrapRef.current;
         if (!anchorPath || !wrap) return setSelected(null);
         const rect = sel.element.getBoundingClientRect();
+        const block = targetOf(sel.element, sel.root);
+        if (!block) return setSelected(null);
+        const section = sel.element.closest(".vl-contribution");
+        const figure = sel.element.closest("figure");
+        const around = section && sel.root.contains(section) ? section : figure && sel.root.contains(figure) ? figure : null;
+        const aroundTarget = around ? targetOf(around, sel.root) : null;
         setNotice(null);
         setUneditable(null);
         setSelected({
           anchorPath,
           anchorTag: anchor.tagName,
           anchorText: (anchor.textContent ?? "").replace(/\s+/g, " ").trim(),
-          top: Math.max(0, rect.top - wrap.getBoundingClientRect().top - 44),
+          block,
+          container: aroundTarget ? { ...aroundTarget, label: around === section ? "section" : "image" } : null,
+          top: rect.top - wrap.getBoundingClientRect().top - 6,
         });
       },
       onUneditable: ({ element, root, text }) => {
@@ -190,6 +222,19 @@ export function PageEditor({
     apply(insertAfter(latest.current, found.element, markup));
   };
 
+  /** Removes the selected block, or the section or figure around it (design D10). */
+  const remove = (target: Target) => {
+    // Drop any typing in the block first, so it isn't saved after the block is gone.
+    session?.cancel();
+    const found = locateEdited(sourceTree(), target.path, target.tag, target.text);
+    if (!found.ok) {
+      say("Couldn't remove that part. Click it again and retry.");
+      return;
+    }
+    setSelected(null);
+    apply(removeElement(latest.current, found.element));
+  };
+
   const onImage = async (file: File | undefined) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
@@ -208,6 +253,8 @@ export function PageEditor({
   };
 
   const rendered = useMemo(() => renderMathInHtml(html), [html]);
+  const removeBtn =
+    "inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-red-200 dark:border-red-900/60 bg-white dark:bg-[#181716] text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 cursor-pointer";
   const btn =
     "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium border border-[#E8E3D9] dark:border-[#33312E] bg-white dark:bg-[#181716] hover:border-[#2563EB] hover:text-[#2563EB] disabled:opacity-40 disabled:hover:border-[#E8E3D9] disabled:hover:text-inherit cursor-pointer disabled:cursor-default";
 
@@ -215,7 +262,7 @@ export function PageEditor({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="flex items-center gap-1.5 text-xs text-[#757069] dark:text-[#948F86]">
-          <MousePointerClick className="w-3.5 h-3.5" /> Click any text to edit it. Click elsewhere to keep the change.
+          <MousePointerClick className="w-3.5 h-3.5" /> Click any text to edit or format it. Click elsewhere to keep the change.
         </p>
         <div className="flex items-center gap-1.5">
           <button type="button" className={btn} onClick={() => step(-1)} disabled={!historyState.canUndo} title="Undo (Ctrl+Z)">
@@ -226,6 +273,8 @@ export function PageEditor({
           </button>
         </div>
       </div>
+
+      <FormatBar element={session?.element ?? null} />
 
       {notice && (
         <div role="status" className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-900 dark:text-amber-200">
@@ -256,7 +305,7 @@ export function PageEditor({
             aria-label="Add after this"
             onPointerDown={(e) => e.preventDefault()}
             style={{ top: selected.top }}
-            className="absolute left-1/2 -translate-x-1/2 z-20 flex flex-wrap items-center gap-1 p-1.5 rounded-xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#BFD3F2] dark:border-[#2C3E5C] shadow-lg text-xs max-w-[95%]"
+            className="absolute left-1/2 -translate-x-1/2 -translate-y-full z-20 flex flex-wrap items-center gap-1 p-1.5 rounded-xl bg-[#FAF8F5] dark:bg-[#21201E] border border-[#BFD3F2] dark:border-[#2C3E5C] shadow-lg text-xs max-w-[95%]"
           >
             <span className="px-1.5 font-semibold text-[#2563EB] flex items-center gap-1">
               <ListChecks className="w-3.5 h-3.5" /> Add after this:
@@ -269,8 +318,17 @@ export function PageEditor({
             <button type="button" className={btn} disabled={imageBusy} onClick={() => imageInput.current?.click()}>
               {imageBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />} Image
             </button>
-            <button type="button" onClick={() => setSelected(null)} aria-label="Close" className="p-1 text-[#757069] cursor-pointer">
-              <X className="w-3.5 h-3.5" />
+            <span className="w-px h-5 bg-[#E8E3D9] dark:bg-[#33312E]" aria-hidden />
+            <button type="button" className={removeBtn} onClick={() => remove(selected.block)} title="Remove this part from your draft">
+              <X className="w-3.5 h-3.5" /> Remove
+            </button>
+            {selected.container && (
+              <button type="button" className={removeBtn} onClick={() => remove(selected.container!)} title={`Remove the whole ${selected.container.label}`}>
+                <X className="w-3.5 h-3.5" /> Remove {selected.container.label}
+              </button>
+            )}
+            <button type="button" onClick={() => setSelected(null)} aria-label="Hide this bar" title="Hide this bar" className="p-1 text-[#757069] cursor-pointer">
+              <ChevronUp className="w-3.5 h-3.5" />
             </button>
           </div>
         )}

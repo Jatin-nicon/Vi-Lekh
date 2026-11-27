@@ -14,6 +14,9 @@
 - [x] 2.3 Add the "Add after this" toolbar on the selected block (Case Study, My Experience, Findings, Paragraph, Image) using the existing snippets and image upload. Verify each insertion appears after the block, credits the contributor, and a non-image file shows an error
 - [x] 2.4 Add undo and redo of on-page edits as draft snapshots (capped at 100) with buttons and Ctrl+Z / Ctrl+Y. Verify undoing an insertion restores the previous draft exactly
 - [x] 2.5 Add the "Review your changes" screen (Before and After side by side, linked scrolling, highlighted changed/added/removed blocks, tabs on narrow screens) shown before the submit dialog and from a "Review changes" action (D9). Verify with one edited paragraph, an inserted section, an unchanged draft, and a phone-width window
+- [x] 2.6 Add × (remove this part) to the selected block's bar, and Remove section inside added Case Study / My Experience / Findings sections (D10). Verify with vitest that removal changes only that range across the 12 imported lessons, and in Chrome that removing an added paragraph, an instructor paragraph and a section works and Undo restores the draft exactly
+- [x] 2.7 Add the formatting bar at the top of the Page view: bold, italic, underline, strikethrough, link, text colour and highlight from the palette, clear formatting, disabled when nothing is edited; extend the clean-up for `s` and palette styles (D11, D3). Verify with vitest on wrapping, toggling, clearing and dropping non-palette colours, and in Chrome that each format reaches the draft
+- [x] 2.8 Add alignment (left, centre, right, justify) by rewriting only the block's start-tag `style` (D11). Verify with vitest that only the start tag changes and other attributes and styles are kept, and in Chrome that a paragraph centres
 
 ## 3. Comments database (D6)
 
@@ -33,6 +36,7 @@
 
 - [ ] 5.1 Run the unit tests, typecheck and build, check the suggest Page view and comments end to end in Chrome against staging data, and record what was verified with real accounts in this file
 - [x] 5.2 Update `docs/` with a short guide for contributors (editing on the page, comments) and verify it renders
+- [x] 5.3 Update `docs/contributing-on-the-page.md` for removing parts and the formatting bar
 
 ## Workflow follow-up
 

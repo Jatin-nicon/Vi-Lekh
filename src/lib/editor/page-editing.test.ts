@@ -41,12 +41,41 @@ describe("startEditing", () => {
     expect(s.finish()).toBeNull();
     s = startEditing(p);
     p.innerHTML = `Hello <b onclick="x()">there</b><script>1</script>`;
-    expect(s.finish()).toBe("Hello <b>there</b>");
+    expect(s.finish()).toEqual({ inner: "Hello <b>there</b>" });
     expect(p.hasAttribute("contenteditable")).toBe(false);
     p.innerHTML = "Hello <b>there</b>";
     s = startEditing(p);
     p.innerHTML = "changed";
     s.cancel();
     expect(p.innerHTML).toBe("Hello <b>there</b>");
+  });
+
+  it("reports alignment changes, and cancelling restores the block's style", () => {
+    const root = mount(`<p style="color: red">Text</p>`);
+    const p = root.querySelector("p")!;
+    let s = startEditing(p);
+    p.style.textAlign = "center";
+    expect(s.finish()).toEqual({ inner: null, align: "center" });
+    s = startEditing(p);
+    p.style.textAlign = "";
+    expect(s.finish()).toEqual({ inner: null, align: "" });
+    p.setAttribute("style", "color: red");
+    s = startEditing(p);
+    p.style.textAlign = "right";
+    s.cancel();
+    expect(p.getAttribute("style")).toBe("color: red");
+  });
+
+  it("formats with Ctrl+B using the same markup as the bar", () => {
+    const root = mount(`<p>make bold</p>`);
+    const p = root.querySelector("p")!;
+    const s = startEditing(p);
+    const r = document.createRange();
+    r.setStart(p.firstChild!, 5);
+    r.setEnd(p.firstChild!, 9);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(r);
+    p.dispatchEvent(new KeyboardEvent("keydown", { key: "b", ctrlKey: true, bubbles: true }));
+    expect(s.finish()).toEqual({ inner: "make <b>bold</b>" });
   });
 });

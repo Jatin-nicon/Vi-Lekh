@@ -17,7 +17,7 @@ See proposal.md for motivation and the specs for required behavior. What shapes 
 - Comments that keep working after the note changes, by quoting the text they are about.
 
 **Non-Goals:**
-- Changing layout, styles or structure on the page (moving, deleting or restyling blocks). Course editors make those in their own editor; contributors can comment to ask for them.
+- Moving blocks, changing a block's kind (paragraph to heading or list), font sizes or fonts, or the lesson's own styles. Course editors make those in their own editor; contributors can comment to ask for them. Removing blocks (D10) and formatting text within a block (D11) are in scope.
 - An HTML code view in suggest mode. Suggest mode is page only.
 - Editing inside SVG illustrations, form fields or app-added elements.
 - Real-time collaboration, mentions or notifications for comments.
@@ -39,7 +39,7 @@ For the clicked element, compute its path of element-child indexes from the rend
 The viewer gets an edit mode. A click picks the nearest editable text block: a `p`, `h1`–`h6`, `li`, `td`, `th`, `dt`, `dd`, `blockquote`, `figcaption`, `caption` or `summary`, or another element whose children are only text and inline elements, outside SVG, form fields and app-added nodes. Only that element gets `contenteditable`.
 
 - Enter inserts a line break inside the block instead of creating new blocks, and paste inserts plain text.
-- On blur, the new inner HTML is cleaned: only inline tags (`b`, `strong`, `i`, `em`, `u`, `a[href]` with http(s)/mailto, `code`, `sub`, `sup`, `br`, `mark`, `span` with its original attributes) are kept, and event attributes and scripts are dropped. It is then spliced into the draft (D1).
+- On blur, the new inner HTML is cleaned: only inline tags (`b`, `strong`, `i`, `em`, `u`, `s`, `a[href]` with http(s)/mailto, `code`, `sub`, `sup`, `br`, `mark`, `span` with its original attributes) are kept; a `style` on `span` or `mark` keeps only `color` and `background-color` with palette values (D11), and event attributes and scripts are dropped. It is then spliced into the draft (D1).
 - The viewer re-renders from the new draft, so pagination and the link layers update.
 - *Alternative*: make the whole page `contenteditable`. Rejected: users could delete structure by accident, and browser editing commands write unpredictable markup across blocks.
 
@@ -48,6 +48,18 @@ The viewer gets an edit mode. A click picks the nearest editable text block: a `
 
 ### D5. Undo and redo as draft snapshots
 The suggest editor keeps a stack of draft strings (capped at 100). Each on-page commit and insertion pushes a snapshot; undo and redo swap the draft and autosave.
+
+### D10. Remove a part
+The × on the selected block's bar deletes the block's source range, from its start-tag start to its end-tag end (or end offset when the end tag is implied), using the same mapping and tag-and-text check as edits (D1, D2). When the block starts its own line, the line break and indentation before it go too, and "Add after this" inserts on a new line without a trailing break, so removing something just added restores the draft exactly. When the block is inside an element from our contribution snippets (`.vl-contribution`) or a `figure`, the bar also offers Remove section or Remove image, which deletes that element's range. A list item, table cell or `figcaption` removes only itself; a whole list or table is not removed from the bar. The draft snapshot makes it undoable (D5).
+
+### D11. Formatting bar
+A bar above the Page view (sticky at the top of the editor's scroll area, so it never covers the lesson) acts on the block being edited. The editing selection is kept while the bar is used (its buttons don't take focus).
+
+- Inline formats wrap the selected text in `b`, `i`, `u`, `s`, `a[href]`, `span style="color"` or `mark style="background-color"` with our own range code, splitting at existing inline tags, instead of `document.execCommand`, which writes `font` tags and markup that differs between browsers. Applying a format that already covers the whole selection removes it. Clear formatting unwraps those tags (and palette spans) inside the selection.
+- Colours come from a fixed palette of six text colours and four highlights chosen to read on the lesson's light and dark backgrounds; the clean-up (D3) drops any other value.
+- Alignment rewrites only the block's start tag: it sets or removes `text-align` in that tag's `style` attribute, keeping the tag's other attributes and style declarations as written. Every other character of the draft stays the same.
+- Links ask for a URL in a small field in the bar and accept http(s) and mailto only.
+- *Alternative*: `execCommand` with `styleWithCSS`. Rejected: output differs between browsers and would be partly stripped by the clean-up, so what the contributor sees wouldn't match what is saved.
 
 ### D9. Before/after review screen
 "Review your changes" renders the base version and the draft in two paged viewers side by side, at the same scale, with their scroll positions linked by proportion of height. Changed sections are found with the existing section diff (`diffSegments`): the matching rendered top-level blocks get a highlight class (changed, added on After, removed on Before) in the rendered DOM only. Below a breakpoint the two viewers become tabs.

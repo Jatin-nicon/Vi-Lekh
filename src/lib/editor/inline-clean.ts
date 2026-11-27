@@ -1,12 +1,15 @@
+import { paletteStyle } from "./format-palette";
+
 /**
  * Cleaning of markup typed or pasted into a block on the page (design D3).
  * Only simple inline formatting survives; anything else keeps its text.
+ * Spans and marks may keep a palette colour (design D11).
  */
 
 /** Inline tags allowed in an edited block, and the attributes each may keep. */
 const ALLOWED: Record<string, string[]> = {
-  b: ["class"], strong: ["class"], i: ["class"], em: ["class"], u: ["class"], small: ["class"],
-  code: ["class"], sub: [], sup: [], mark: ["class"], span: ["class"], a: ["href", "class"], br: [],
+  b: ["class"], strong: ["class"], i: ["class"], em: ["class"], u: ["class"], s: [], small: ["class"],
+  code: ["class"], sub: [], sup: [], mark: ["class", "style"], span: ["class", "style"], a: ["href", "class"], br: [],
 };
 const DROP_WITH_CONTENT = new Set(["script", "style", "template", "iframe", "object", "embed", "svg", "math", "noscript"]);
 const SAFE_HREF = /^(https?:|mailto:)/i;
@@ -16,7 +19,10 @@ export function isInlineOnly(el: Element): boolean {
   return Array.from(el.querySelectorAll("*")).every((c) => {
     const tag = c.tagName.toLowerCase();
     const allowed = ALLOWED[tag];
-    return allowed !== undefined && Array.from(c.attributes).every((a) => allowed.includes(a.name));
+    return (
+      allowed !== undefined &&
+      Array.from(c.attributes).every((a) => allowed.includes(a.name) && (a.name !== "style" || paletteStyle(tag, a.value).clean))
+    );
   });
 }
 
@@ -50,6 +56,11 @@ export function cleanInline(html: string): string {
       for (const attr of Array.from(el.attributes)) {
         const keep = allowed.includes(attr.name) && !(attr.name === "href" && !SAFE_HREF.test(attr.value.trim()));
         if (!keep) el.removeAttribute(attr.name);
+        else if (attr.name === "style") {
+          const { style } = paletteStyle(tag, attr.value);
+          if (style) el.setAttribute("style", style);
+          else el.removeAttribute("style");
+        }
       }
       if (tag === "a" && !el.hasAttribute("href")) {
         while (el.firstChild) el.parentNode!.insertBefore(el.firstChild, el);

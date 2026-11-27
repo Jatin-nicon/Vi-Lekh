@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { innerRange, insertAfter, locate, parseSource, renderedPath, replaceInner, resolvePath } from "./source-map";
+import { innerRange, insertAfter, locate, parseSource, removeElement, renderedPath, replaceInner, resolvePath, setStartTagStyle } from "./source-map";
 import { prepareDocument } from "@/lib/layout/document-html";
 import { diffSegments } from "@/lib/diff/html-diff";
 
@@ -85,6 +85,40 @@ describe("source map", () => {
     expect(resolvePath(tree, [9, 9])).toBeNull();
   });
 
+  it("removes an element and the line it sat on, leaving the rest as it was", () => {
+    const html = "<h1>T</h1>\n<p>One</p>\n<p>Two</p>\n<ul><li>A</li><li>B</li></ul>";
+    const tree = parseSource(html);
+    expect(removeElement(html, resolvePath(tree, [1])!)).toBe("<h1>T</h1>\n<p>Two</p>\n<ul><li>A</li><li>B</li></ul>");
+    expect(removeElement(html, resolvePath(tree, [3, 0])!)).toBe("<h1>T</h1>\n<p>One</p>\n<p>Two</p>\n<ul><li>B</li></ul>");
+    const implied = "<ul><li>A<li>B</ul>";
+    expect(removeElement(implied, resolvePath(parseSource(implied), [0, 0])!)).toBe("<ul><li>B</ul>");
+    const indented = "<ul>\n  <li>A</li>\n  <li>B</li>\n</ul>";
+    expect(removeElement(indented, resolvePath(parseSource(indented), [0, 1])!)).toBe("<ul>\n  <li>A</li>\n</ul>");
+  });
+
+  it("removing what was just inserted restores the source exactly", () => {
+    const html = "<h1>T</h1>\n<p>One</p>\n<h2>Next</h2>";
+    const added = insertAfter(html, resolvePath(parseSource(html), [1])!, "<section class=\"vl-contribution\">\n  <p>Idea</p>\n</section>\n");
+    expect(added).toBe("<h1>T</h1>\n<p>One</p>\n<section class=\"vl-contribution\">\n  <p>Idea</p>\n</section>\n<h2>Next</h2>");
+    expect(removeElement(added, resolvePath(parseSource(added), [2])!)).toBe(html);
+  });
+
+  it("sets alignment in the start tag only, keeping other attributes and styles", () => {
+    const html = `<p class="lead" style="color: red;margin:0" id=x>Text</p><p>Next</p>`;
+    const el = () => resolvePath(parseSource(html), [0])!;
+    const centred = setStartTagStyle(html, el(), "text-align", "center");
+    expect(centred).toBe(`<p class="lead" style="color: red; margin:0; text-align: center" id=x>Text</p><p>Next</p>`);
+    const again = setStartTagStyle(centred, resolvePath(parseSource(centred), [0])!, "text-align", "right");
+    expect(again).toBe(`<p class="lead" style="color: red; margin:0; text-align: right" id=x>Text</p><p>Next</p>`);
+    const plain = "<p>Hi</p>";
+    const added = setStartTagStyle(plain, resolvePath(parseSource(plain), [0])!, "text-align", "justify");
+    expect(added).toBe(`<p style="text-align: justify">Hi</p>`);
+    expect(setStartTagStyle(added, resolvePath(parseSource(added), [0])!, "text-align", null)).toBe(plain);
+    expect(setStartTagStyle(plain, resolvePath(parseSource(plain), [0])!, "text-align", null)).toBe(plain);
+    const selfClosing = "<div/>";
+    expect(setStartTagStyle(selfClosing, resolvePath(parseSource(selfClosing), [0])!, "text-align", "center")).toBe(`<div style="text-align: center"/>`);
+  });
+
   // The imported lessons are not in the repository. Point LESSONS_DIR at a folder of them to run this.
   const dir = process.env.LESSONS_DIR;
   it.runIf(Boolean(dir))("maps every text block of the imported lessons and edits only that block", () => {
@@ -102,6 +136,17 @@ describe("source map", () => {
         ok++;
         const { start, end } = innerRange(loc.element);
         expect(replaceInner(html, loc.element, "EDITED")).toBe(html.slice(0, start) + "EDITED" + html.slice(end));
+        // Removing changes only the element's own range (and the line break after it).
+        const { startOffset, endOffset } = loc.element.sourceCodeLocation!;
+        const removed = removeElement(html, loc.element);
+        const lineStart = html.slice(0, startOffset).replace(/\r?\n[ \t]*$/, "").length;
+        expect(removed === html.slice(0, lineStart) + html.slice(endOffset)).toBe(true);
+        // Aligning changes only the start tag.
+        const aligned = setStartTagStyle(html, loc.element, "text-align", "center");
+        const tagEnd = loc.element.sourceCodeLocation!.startTag!.endOffset;
+        expect(aligned.slice(0, startOffset)).toBe(html.slice(0, startOffset));
+        expect(aligned.slice(aligned.length - (html.length - tagEnd))).toBe(html.slice(tagEnd));
+        expect(parseSource(aligned).html).toContain("text-align: center");
       }
       expect(ok, f).toBe(blocks.length);
     }

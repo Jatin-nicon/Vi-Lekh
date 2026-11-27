@@ -1,4 +1,5 @@
 import { cleanInline, isInlineOnly } from "./inline-clean";
+import { selectionIn, selectRange, toggleFormat, type InlineFormat } from "./inline-format";
 
 /**
  * Editing a note on the rendered page (design D3): which element a click
@@ -46,24 +47,43 @@ export function insertionAnchor(block: Element, root: Element): Element {
   return el && el !== root ? el : block;
 }
 
+/** What changed in a block while it was edited. */
+export interface EditResult {
+  /** The cleaned inner HTML, or null when the text and inline formatting are unchanged. */
+  inner: string | null;
+  /** The block's new `text-align` ("" to remove it), when alignment changed (design D11). */
+  align?: string;
+}
+
 export interface EditSession {
   element: HTMLElement;
   original: string;
-  /** Ends editing; returns the cleaned inner HTML if it changed, else null. */
-  finish(): string | null;
+  /** Ends editing; returns what changed, or null when nothing did. */
+  finish(): EditResult | null;
   cancel(): void;
 }
+
+const SHORTCUTS: Record<string, InlineFormat> = { b: "bold", i: "italic", u: "underline" };
 
 /** Makes one block editable: Enter adds a line break, paste inserts plain text. */
 export function startEditing(element: HTMLElement): EditSession {
   const original = element.innerHTML;
+  const originalStyle = element.getAttribute("style");
+  const originalAlign = element.style.textAlign;
   element.setAttribute("contenteditable", "true");
   element.setAttribute("data-vl-editing", "");
   element.spellcheck = true;
   const doc = element.ownerDocument;
   const onKey = (e: KeyboardEvent) => {
     e.stopPropagation();
-    if (e.key === "Enter") {
+    const shortcut = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey ? SHORTCUTS[e.key.toLowerCase()] : undefined;
+    if (shortcut) {
+      // Same markup as the formatting bar, not the browser's own.
+      e.preventDefault();
+      const range = selectionIn(element);
+      const next = range && !range.collapsed ? toggleFormat(element, range, shortcut) : null;
+      if (next) selectRange(next);
+    } else if (e.key === "Enter") {
       e.preventDefault();
       doc.execCommand("insertLineBreak");
     } else if (e.key === "Escape") {
@@ -97,13 +117,18 @@ export function startEditing(element: HTMLElement): EditSession {
       done = true;
       stop();
       const next = cleanInline(element.innerHTML);
-      return next === cleanInline(original) ? null : next;
+      const inner = next === cleanInline(original) ? null : next;
+      const align = element.style.textAlign;
+      if (align !== originalAlign) return { inner, align };
+      return inner === null ? null : { inner };
     },
     cancel() {
       if (done) return;
       done = true;
       stop();
       element.innerHTML = original;
+      if (originalStyle === null) element.removeAttribute("style");
+      else element.setAttribute("style", originalStyle);
     },
   };
   return session;
