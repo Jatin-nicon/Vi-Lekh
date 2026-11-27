@@ -3,7 +3,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, Check, Copy, GitMerge, Inbox, Loader2, MessageSquareWarning, X, AlertTriangle, PenLine } from "lucide-react";
+import { ArrowLeft, Check, Copy, GitMerge, Inbox, Loader2, MessageSquareText, MessageSquareWarning, X, AlertTriangle, PenLine } from "lucide-react";
 import { AuthProvider, useAuth } from "@/lib/auth/auth-context";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/auth/user-menu";
@@ -12,6 +12,7 @@ import { HtmlSandboxedViewer } from "@/components/editor/html-sandboxed-viewer";
 import { AnnotationLayer } from "@/components/reader/annotation-layer";
 import { blocksToHtml } from "@/lib/editor/block-converter";
 import { getVersion } from "@/lib/data/versions";
+import { listReviewThreads, type OpenThread } from "@/lib/data/comments";
 import { isHtmlDocument } from "@/lib/layout/document-html";
 import { mergeSegments, resolveConflicts, type ConflictChoice, type MergeResult } from "@/lib/diff/html-diff";
 import { normalizePage, type PageAnnotations } from "@/lib/annotations/annotation-sync";
@@ -75,10 +76,12 @@ function ReviewQueue() {
         <p className="text-xs text-[#757069] flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading…</p>
       ) : !user ? (
         <p className="text-sm">Sign in to review suggestions.</p>
-      ) : items && items.length === 0 ? (
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start">
+        {items && items.length === 0 ? (
         <p className="text-sm text-[#757069]">No suggestions are waiting for review in your courses.</p>
       ) : (
-        <ul className="space-y-3 max-w-3xl">
+        <ul className="space-y-3">
           {items?.map((s) => (
             <li key={s.id}>
               <Link href={`/review?suggestion=${s.id}`} className="block p-4 rounded-xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:border-[#A85D44]">
@@ -96,7 +99,58 @@ function ReviewQueue() {
           ))}
         </ul>
       )}
+        <OpenComments />
+        </div>
+      )}
     </Shell>
+  );
+}
+
+/** Open comment threads in the courses the user reviews (design D8). */
+function OpenComments() {
+  const [threads, setThreads] = useState<OpenThread[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    listReviewThreads()
+      .then((t) => !cancelled && setThreads(t))
+      .catch((err) => !cancelled && setError(errorMessage(err, "Comments could not be loaded.")));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return (
+    <section aria-label="Open comments" className="space-y-3">
+      <h2 className="flex items-center gap-2 text-sm font-semibold">
+        <MessageSquareText className="w-4 h-4 text-[#A85D44]" /> Open comments{threads?.length ? ` (${threads.length})` : ""}
+      </h2>
+      {error ? (
+        <p role="alert" className="text-xs text-red-700 dark:text-red-400">{error}</p>
+      ) : threads === null ? (
+        <p className="text-xs text-[#757069] flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading…</p>
+      ) : threads.length === 0 ? (
+        <p className="text-xs text-[#757069]">No open comments in your courses.</p>
+      ) : (
+        <ul className="space-y-2">
+          {threads.map((t) => (
+            <li key={t.id}>
+              <Link
+                href={`/notes?course=${t.note?.course_id}&note=${t.note_id}&comment=${t.id}`}
+                className="block p-3 rounded-xl border border-[#E8E3D9] dark:border-[#33312E] bg-[#FAF8F5] dark:bg-[#21201E] hover:border-[#A85D44] text-xs space-y-1"
+              >
+                <span className="block text-sm font-semibold">{t.note?.title ?? "Note"}</span>
+                {t.anchor?.quote && <span className="block border-l-2 border-[#CA8A04] pl-2 italic text-[#57534E] dark:text-[#B5B0A6] line-clamp-2">{t.anchor.quote}</span>}
+                <span className="block line-clamp-3">{t.body}</span>
+                <span className="block text-[11px] text-[#757069]" suppressHydrationWarning>
+                  {t.author?.display_name ?? "Someone"} · {formatDate(t.created_at)}
+                  {t.reply_count ? ` · ${t.reply_count} ${t.reply_count === 1 ? "reply" : "replies"}` : ""}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

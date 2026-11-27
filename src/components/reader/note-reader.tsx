@@ -26,7 +26,7 @@ import { createClient } from "@/lib/supabase/client";
 import { fieldAtPoint, formFieldsKey } from "@/lib/layout/form-fields";
 import { exportAnnotatedPdf } from "@/lib/pdf/pdf-export";
 import { printPagedHtml } from "@/lib/pdf/html-print-export";
-import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe, Maximize, Minimize, ZoomIn, ZoomOut, Cloud, CloudOff, Loader2, History, GitPullRequestDraft, Copy } from "lucide-react";
+import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe, Maximize, Minimize, ZoomIn, ZoomOut, Cloud, CloudOff, Loader2, History, GitPullRequestDraft, Copy, MessageSquareText } from "lucide-react";
 import {
   ANNOTATION_KINDS,
   annotationStorageKey,
@@ -35,6 +35,7 @@ import {
 } from "@/lib/annotations/storage-keys";
 import { PAGE_WIDTH } from "@/lib/layout/paginate";
 import { PastVersionBanner, VersionHistoryPanel } from "./version-history";
+import { NoteComments } from "./note-comments";
 import { getVersion, restoreVersion, setVersionParam, versionParam, type Version } from "@/lib/data/versions";
 import { HtmlDiffViewer } from "@/components/diff/html-diff-viewer";
 import { notesService } from "@/lib/data/notes-service";
@@ -69,6 +70,20 @@ export function NoteReader({
   const [versionError, setVersionError] = useState<string | null>(null);
   const [restoring, setRestoring] = useState(false);
   const [canRestore, setCanRestore] = useState(false);
+  // Comments (design D8).
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentCount, setCommentCount] = useState(0);
+  const [contentRoot, setContentRoot] = useState<HTMLElement | null>(null);
+  const [focusComment, setFocusComment] = useState<string | null>(null);
+  // A link from the review area (?comment=…) opens the panel on that thread.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("comment");
+    if (!id) return;
+    queueMicrotask(() => {
+      setFocusComment(id);
+      setCommentsOpen(true);
+    });
+  }, [note.id]);
   const [shownNoteId, setShownNoteId] = useState(note.id);
   if (shownNoteId !== note.id) {
     setShownNoteId(note.id);
@@ -998,6 +1013,16 @@ export function NoteReader({
             )}
             <button
               type="button"
+              onClick={() => setCommentsOpen((o) => !o)}
+              aria-pressed={commentsOpen}
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-[#E8E3D9] dark:border-[#383532] font-medium hover:text-[#2D2926] dark:hover:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] cursor-pointer"
+              title="Comments on this note"
+            >
+              <MessageSquareText className="w-3.5 h-3.5" />
+              <span>Comments{commentCount > 0 ? ` (${commentCount})` : ""}</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setHistoryOpen(true)}
               className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-[#E8E3D9] dark:border-[#383532] font-medium hover:text-[#2D2926] dark:hover:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] cursor-pointer"
               title="Version history"
@@ -1042,6 +1067,22 @@ export function NoteReader({
             )}
           </div>
         )}
+
+        <NoteComments
+          noteId={note.id}
+          revisionId={revision?.id ?? null}
+          root={viewMode === "html" && !viewing ? contentRoot : null}
+          user={auth?.user ? { id: auth.user.uid, name: auth.profile?.display_name || auth.user.displayName || "You" } : null}
+          isReviewer={canRestore}
+          canComment={!viewing && viewMode === "html"}
+          open={commentsOpen}
+          onOpenChange={setCommentsOpen}
+          onSignIn={async () => {
+            await auth?.signInWithGoogle();
+          }}
+          onCount={setCommentCount}
+          focusId={focusComment}
+        />
 
         {historyOpen && (
           <VersionHistoryPanel
@@ -1153,6 +1194,7 @@ export function NoteReader({
               paged
               zoom={htmlZoom}
               fieldsKey={viewing ? undefined : formFieldsKey(note.id)}
+              onContentRoot={setContentRoot}
               onLayout={({ pageCount }) =>
                 !viewing && setPageCountByLayout((prev) =>
                   prev[annotationLayout] === pageCount ? prev : { ...prev, [annotationLayout]: pageCount },

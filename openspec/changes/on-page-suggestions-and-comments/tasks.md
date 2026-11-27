@@ -17,16 +17,16 @@
 
 ## 3. Comments database (D6)
 
-- [ ] 3.1 Write `supabase/migrations/0005_note_comments.sql` (table, indexes, row-level security policies, column grants, `set_comment_resolved`) and apply it on staging. Verify the table and policies exist with `list_tables` and a policy query
-- [ ] 3.2 Extend `supabase/tests` with comment assertions: author and reviewer can read, another reader and signed-out cannot; replies only by author or reviewer; edit and delete own only; resolve by author or reviewer; deleting a thread removes replies. Verify they pass on staging and roll back
-- [ ] 3.3 Add `src/lib/data/comments.ts` (list threads for a note, add comment, reply, edit, delete, resolve/reopen, open threads for the review area) with vitest tests using a mocked client
+- [x] 3.1 Write `supabase/migrations/0005_note_comments.sql` (table, indexes, row-level security policies, column grants, `set_comment_resolved`) and apply it on staging. Verify the table and policies exist with `list_tables` and a policy query
+- [x] 3.2 Extend `supabase/tests` with comment assertions: author and reviewer can read, another reader and signed-out cannot; replies only by author or reviewer; edit and delete own only; resolve by author or reviewer; deleting a thread removes replies. Verify they pass on staging and roll back
+- [x] 3.3 Add `src/lib/data/comments.ts` (list threads for a note, add comment, reply, edit, delete, resolve/reopen, open threads for the review area) with vitest tests using a mocked client
 
 ## 4. Comments in the reader and review area (D7, D8)
 
-- [ ] 4.1 Add anchoring: build `{quote, prefix, suffix, path}` from a selection in the shadow root, and find and highlight an anchor with temporary marks. Verify with vitest on sample HTML (exact, moved and missing text)
-- [ ] 4.2 Add the "Comment" button on text selection and a block picker, with the new-comment form (2,000 characters max, sign-in prompt when signed out). Verify in Chrome that a comment posts with the selected quote
-- [ ] 4.3 Add the Comments button with the open-thread count and the side panel (threads, replies, resolve/reopen, edit, delete, resolved list, earlier-version note), and scroll-to-highlight. Verify in Chrome, with stubbed data, each action and the jump to an anchor
-- [ ] 4.4 Add "Open comments" to the review area, limited by row-level security to the reviewer's courses. Verify a course X editor sees only course X threads
+- [x] 4.1 Add anchoring: build `{quote, prefix, suffix, path}` from a selection in the shadow root, and find and highlight an anchor with temporary marks. Verify with vitest on sample HTML (exact, moved and missing text)
+- [x] 4.2 Add the "Comment" button on text selection and a block picker, with the new-comment form (2,000 characters max, sign-in prompt when signed out). Verify in Chrome that a comment posts with the selected quote
+- [x] 4.3 Add the Comments button with the open-thread count and the side panel (threads, replies, resolve/reopen, edit, delete, resolved list, earlier-version note), and scroll-to-highlight. Verify in Chrome, with stubbed data, each action and the jump to an anchor
+- [x] 4.4 Add "Open comments" to the review area, limited by row-level security to the reviewer's courses. Verify a course X editor sees only course X threads
 - [ ] 4.5 When an on-page edit can't be mapped back to the source, show a message with a "Leave a comment" action that opens the comment form quoting that text. Verify with a test document whose rendered tree differs from the source, and that the draft is unchanged
 
 ## 5. Release

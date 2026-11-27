@@ -61,6 +61,17 @@ export function renderedPath(el: Element, root: Element): number[] | null {
   return node === root ? path : null;
 }
 
+/** The rendered element at a child-index path, skipping the viewer's own nodes; the inverse of `renderedPath`. */
+export function elementAtPath(root: Element, path: number[]): Element | null {
+  let node: Element = root;
+  for (const i of path) {
+    const next: Element | undefined = Array.from(node.children).filter((c) => !c.matches(APP_NODES))[i];
+    if (!next) return null;
+    node = next;
+  }
+  return node;
+}
+
 export function resolvePath(tree: SourceTree, path: number[]): P5Element | null {
   let node: P5Parent = tree.root;
   let el: P5Element | null = null;
