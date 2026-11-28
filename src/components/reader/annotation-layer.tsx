@@ -4,6 +4,15 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import type { AnnotationTool, ShapeType } from "./annotation-toolbar";
 import { COLOR_PALETTE } from "./annotation-toolbar";
 import { Trash2, Check, Move } from "lucide-react";
+import {
+  annotationStorageKey,
+  legacyAnnotationKey,
+  type AnnotationKind,
+  type AnnotationLayout,
+} from "@/lib/annotations/storage-keys";
+import { loadTextStyle, type TextBoxFont } from "@/lib/annotations/text-style";
+import { NOTE_HAND, ensureNoteFonts } from "@/lib/layout/note-fonts";
+import { openLink, splitLinks } from "@/lib/layout/links";
 
 export interface AnnotationPoint {
   x: number;
@@ -43,11 +52,15 @@ export interface AnnotationTextBox {
   bold?: boolean;
   italic?: boolean;
   hasBorder?: boolean;
+  /** Typeface. Boxes saved before this existed have none and stay sans. */
+  font?: TextBoxFont;
 }
 
 export interface AnnotationLayerProps {
   noteId: string;
   pageNumber?: number;
+  /** Storage key family for per-page annotations. Defaults to "pdf". */
+  layout?: AnnotationLayout;
   scale?: number;
   intrinsicWidth?: number;
   intrinsicHeight?: number;
@@ -381,6 +394,7 @@ export function getAnnotationCursor(tool: AnnotationTool | null, color: string):
 export function AnnotationLayer({
   noteId,
   pageNumber,
+  layout = "pdf",
   scale = 1.0,
   intrinsicWidth,
   intrinsicHeight,
@@ -450,20 +464,16 @@ export function AnnotationLayer({
   const currentScale = scale > 0 ? scale : 1.0;
 
   // 1. LocalStorage Auto-Persistence keyed by note ID and page number
-  const strokesStorageKey =
+  const storageKey = (kind: AnnotationKind) =>
     pageNumber !== undefined
-      ? `vilekh_pdf_annotations_${noteId}_page_${pageNumber}`
-      : `vilekh_annotations_${noteId}`;
-
-  const textStorageKey =
-    pageNumber !== undefined
-      ? `vilekh_pdf_textboxes_${noteId}_page_${pageNumber}`
-      : `vilekh_textboxes_${noteId}`;
-
-  const shapesStorageKey =
-    pageNumber !== undefined
-      ? `vilekh_pdf_shapes_${noteId}_page_${pageNumber}`
-      : `vilekh_shapes_${noteId}`;
+      ? annotationStorageKey(layout, kind, noteId, pageNumber)
+      : legacyAnnotationKey(kind, noteId);
+  const strokesStorageKey = storageKey("annotations");
+  const textStorageKey = storageKey("textboxes");
+  const shapesStorageKey = storageKey("shapes");
+  // Only the PDF layout falls back to the old single-layer keys on page 1.
+  // html-a4 coordinates are page units, so old free-width marks are not shown.
+  const useLegacyFallback = layout === "pdf" && pageNumber === 1;
 
   // Keep latest callback references without triggering effect re-executions
   const onChangeStrokesRef = useRef(onChangeStrokes);
@@ -520,7 +530,7 @@ export function AnnotationLayer({
     try {
       const savedStrokes =
         localStorage.getItem(strokesStorageKey) ||
-        (pageNumber === 1 ? localStorage.getItem(`vilekh_annotations_${noteId}`) : null);
+        (useLegacyFallback ? localStorage.getItem(legacyAnnotationKey("annotations", noteId)) : null);
       if (savedStrokes) {
         const parsed = JSON.parse(savedStrokes);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -534,7 +544,7 @@ export function AnnotationLayer({
     try {
       const savedTextBoxes =
         localStorage.getItem(textStorageKey) ||
-        (pageNumber === 1 ? localStorage.getItem(`vilekh_textboxes_${noteId}`) : null);
+        (useLegacyFallback ? localStorage.getItem(legacyAnnotationKey("textboxes", noteId)) : null);
       if (savedTextBoxes) {
         const parsed = JSON.parse(savedTextBoxes);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -552,7 +562,7 @@ export function AnnotationLayer({
     try {
       const savedShapes =
         localStorage.getItem(shapesStorageKey) ||
-        (pageNumber === 1 ? localStorage.getItem(`vilekh_shapes_${noteId}`) : null);
+        (useLegacyFallback ? localStorage.getItem(legacyAnnotationKey("shapes", noteId)) : null);
       if (savedShapes) {
         const parsed = JSON.parse(savedShapes);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -562,7 +572,7 @@ export function AnnotationLayer({
     } catch {
       // Ignore storage read errors
     }
-  }, [noteId, strokesStorageKey, textStorageKey, shapesStorageKey]);
+  }, [noteId, strokesStorageKey, textStorageKey, shapesStorageKey, useLegacyFallback]);
 
   // Save strokes to localStorage
   const updateStrokes = useCallback(
@@ -805,7 +815,7 @@ export function AnnotationLayer({
 
           // Two-finger scroll: pan window smoothly
           if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
-            window.scrollBy(-deltaX, -deltaY);
+            (containerRef.current?.closest("[data-reader-scroller]") ?? window).scrollBy(-deltaX, -deltaY);
           }
 
           // Two-finger pinch: zoom PDF scale
@@ -1360,8 +1370,7 @@ export function AnnotationLayer({
       y: boundedY,
       width: defaultWidth,
       text: "",
-      color,
-      fontSize: 14,
+      ...loadTextStyle(),
       bold: false,
       italic: false,
       hasBorder: false,
@@ -1589,6 +1598,8 @@ export function AnnotationLayer({
   );
 }
 
+const HAND_STACK = `${NOTE_HAND}, cursive`;
+
 interface WordDocsTextBoxItemProps {
   box: AnnotationTextBox;
   scale: number;
@@ -1613,6 +1624,13 @@ function WordDocsTextBoxItem({
   onDelete,
 }: WordDocsTextBoxItemProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isHand = box.font === "hand";
+
+  // Handwriting uses the bundled note font.
+  useEffect(() => {
+    if (isHand) ensureNoteFonts();
+  }, [isHand]);
+
   const dragRef = useRef<{ startX: number; startY: number; boxX: number; boxY: number } | null>(
     null
   );
@@ -1638,7 +1656,7 @@ function WordDocsTextBoxItem({
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.height = `${Math.max(36 * scale, textareaRef.current.scrollHeight)}px`;
     }
-  }, [box.text, isSelected, box.width, scale]);
+  }, [box.text, isSelected, box.width, scale, box.font, box.fontSize, box.bold]);
 
   // 1. Move/Drag interaction via the bounding frame
   const handleFrameDragStart = (e: React.PointerEvent) => {
@@ -1885,6 +1903,7 @@ function WordDocsTextBoxItem({
               fontSize: `${Math.max(12, (box.fontSize || 14) * scale)}px`,
               fontWeight: box.bold ? "bold" : "normal",
               fontStyle: box.italic ? "italic" : "normal",
+              ...(isHand ? { fontFamily: HAND_STACK, lineHeight: 1.35 } : null),
             }}
             rows={2}
           />
@@ -1905,9 +1924,31 @@ function WordDocsTextBoxItem({
               fontSize: `${Math.max(12, (box.fontSize || 14) * scale)}px`,
               fontWeight: box.bold ? "bold" : "normal",
               fontStyle: box.italic ? "italic" : "normal",
+              ...(isHand ? { fontFamily: HAND_STACK, lineHeight: 1.35 } : null),
             }}
           >
-            {box.text}
+            {splitLinks(box.text).map((part, i) =>
+              part.href ? (
+                <a
+                  key={i}
+                  href={part.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openLink(part.href!);
+                  }}
+                  className="pointer-events-auto underline underline-offset-2 cursor-pointer hover:opacity-80"
+                  title={`Open ${part.href} in a new tab`}
+                >
+                  {part.text}
+                </a>
+              ) : (
+                <React.Fragment key={i}>{part.text}</React.Fragment>
+              ),
+            )}
           </div>
         )}
       </div>

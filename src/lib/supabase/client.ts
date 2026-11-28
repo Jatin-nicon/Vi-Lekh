@@ -1,9 +1,16 @@
-import { createBrowserClient } from "@supabase/ssr";
+import { createClient as createSupabaseClient, type SupabaseClient } from "@supabase/supabase-js";
+import { auth } from "@/lib/firebase/config";
 
-export function createClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://example.supabase.co";
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "example-anon-key";
+let client: SupabaseClient | null = null;
 
-  return createBrowserClient(supabaseUrl, supabaseAnonKey);
+/** Browser client that identifies the user to Postgres with their Firebase ID token (design D7). */
+export function createClient(): SupabaseClient {
+  if (!client) {
+    client = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || "https://example.supabase.co",
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "example-anon-key",
+      { accessToken: async () => (await auth.currentUser?.getIdToken()) ?? null },
+    );
+  }
+  return client;
 }
-

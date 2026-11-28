@@ -8,7 +8,8 @@ import {
   LogIn, 
   LogOut, 
   ChevronDown,
-  LayoutDashboard
+  LayoutDashboard,
+  GitPullRequestDraft
 } from "lucide-react";
 import Link from "next/link";
 
@@ -115,6 +116,17 @@ export function UserMenu() {
                 </Link>
               </div>
             )}
+
+            <div className="py-1 border-b border-[#E8E3D9] dark:border-[#33312E] mb-1">
+              <Link
+                href="/suggestions"
+                onClick={() => setIsMenuOpen(false)}
+                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-[#2D2926] dark:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#292825] text-xs font-semibold transition-colors text-left"
+              >
+                <GitPullRequestDraft className="w-3.5 h-3.5 text-[#2563EB]" />
+                <span>My suggestions</span>
+              </Link>
+            </div>
 
             {/* Sign Out */}
             <button

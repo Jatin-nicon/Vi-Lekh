@@ -16,8 +16,31 @@ import {
   type AnnotationShape,
 } from "./annotation-layer";
 import { PdfViewer } from "@/components/pdf/pdf-viewer";
+import { DOCUMENT_WIDTH, isHtmlDocument } from "@/lib/layout/document-html";
+import { useFullscreen } from "./use-fullscreen";
+import { useAnnotationSync, type SyncStatus } from "./use-annotation-sync";
+import { useAnswerSync } from "./use-answer-sync";
+import { useOptionalAuth } from "@/lib/auth/auth-context";
+import { contentHash, type PageAnnotations } from "@/lib/annotations/annotation-sync";
+import { createClient } from "@/lib/supabase/client";
+import { fieldAtPoint, formFieldsKey } from "@/lib/layout/form-fields";
 import { exportAnnotatedPdf } from "@/lib/pdf/pdf-export";
-import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe } from "lucide-react";
+import { printPagedHtml } from "@/lib/pdf/html-print-export";
+import { CheckCircle2, Calendar, FileText, Sparkles, AlertCircle, Globe, Maximize, Minimize, ZoomIn, ZoomOut, Cloud, CloudOff, Loader2, History, GitPullRequestDraft, Copy, MessageSquareText } from "lucide-react";
+import {
+  ANNOTATION_KINDS,
+  annotationStorageKey,
+  legacyAnnotationKey,
+  type AnnotationLayout,
+} from "@/lib/annotations/storage-keys";
+import { PAGE_WIDTH } from "@/lib/layout/paginate";
+import { PastVersionBanner, VersionHistoryPanel } from "./version-history";
+import { NoteComments } from "./note-comments";
+import { getVersion, restoreVersion, setVersionParam, versionParam, type Version } from "@/lib/data/versions";
+import { HtmlDiffViewer } from "@/components/diff/html-diff-viewer";
+import { notesService } from "@/lib/data/notes-service";
+import { getRelatedCopies } from "@/lib/data/suggestions";
+import Link from "next/link";
 import { formatDate } from "@/lib/utils";
 
 interface NoteReaderProps {
@@ -27,6 +50,8 @@ interface NoteReaderProps {
   onProposeEdit?: () => void;
   contributors?: Profile[];
   defaultPdfSource?: string | File | ArrayBuffer;
+  /** Dev harness only: the user to sync annotations for, instead of the signed-in one. */
+  syncUserId?: string | null;
 }
 
 export function NoteReader({
@@ -34,16 +59,41 @@ export function NoteReader({
   revision,
   courseTitle = "Course Notes",
   defaultPdfSource,
+  syncUserId,
 }: NoteReaderProps) {
   const blocks = revision?.blocks || [];
 
+  // Version history (tasks 11.1–11.3): a past version opened read-only.
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [viewing, setViewing] = useState<Version | null>(null);
+  const [comparing, setComparing] = useState(false);
+  const [versionError, setVersionError] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  const [canRestore, setCanRestore] = useState(false);
+  // Comments (design D8).
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentCount, setCommentCount] = useState(0);
+  const [contentRoot, setContentRoot] = useState<HTMLElement | null>(null);
+  const [focusComment, setFocusComment] = useState<string | null>(null);
+  // A link from the review area (?comment=…) opens the panel on that thread.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("comment");
+    if (!id) return;
+    queueMicrotask(() => {
+      setFocusComment(id);
+      setCommentsOpen(true);
+    });
+  }, [note.id]);
+  const [shownNoteId, setShownNoteId] = useState(note.id);
+  if (shownNoteId !== note.id) {
+    setShownNoteId(note.id);
+    setViewing(null);
+    setComparing(false);
+    setVersionError(null);
+  }
+
   // Annotation states
-  const [tool, setTool] = useState<AnnotationTool | null>(() => {
-    if (typeof window !== "undefined" && window.innerWidth < 768) {
-      return null;
-    }
-    return "pen";
-  });
+  const [tool, setTool] = useState<AnnotationTool | null>(null);
   const [color, setColor] = useState<string>("#A85D44");
   const [penWidth, setPenWidth] = useState<number>(2.5);
   const [shapeWidth, setShapeWidth] = useState<number>(2.0);
@@ -57,6 +107,10 @@ export function NoteReader({
   const [pageStrokes, setPageStrokes] = useState<Record<number, AnnotationStroke[]>>({});
   const [pageShapes, setPageShapes] = useState<Record<number, AnnotationShape[]>>({});
   const [pageTextBoxes, setPageTextBoxes] = useState<Record<number, AnnotationTextBox[]>>({});
+
+  // Undo/redo availability
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   // Active page tracked during scroll
   const [activePage, setActivePage] = useState<number>(1);
@@ -88,6 +142,13 @@ export function NoteReader({
     return renderMathInHtml(rawHtml);
   }, [blocks]);
 
+  const pastContent = useMemo(
+    () => (viewing?.blocks?.length ? renderMathInHtml(blocksToHtml(viewing.blocks)) : ""),
+    [viewing],
+  );
+  /** What the reader shows: the current version, or the past one being viewed. */
+  const displayContent = viewing ? pastContent : renderedContent;
+
   const hasPdf = Boolean(effectivePdfSource);
   const hasHtml = Boolean(
     renderedContent &&
@@ -106,7 +167,8 @@ export function NoteReader({
         // Ignore
       }
     }
-    return effectivePdfSource ? "pdf" : "html";
+    // The HTML version is the main format: default to it when it exists.
+    return hasHtml ? "html" : "pdf";
   });
 
   // Keep viewMode synced if note changes
@@ -126,8 +188,8 @@ export function NoteReader({
         // Ignore
       }
     }
-    setViewMode(effectivePdfSource ? "pdf" : "html");
-  }, [note.id, effectivePdfSource, hasPdf, hasHtml]);
+    setViewMode(hasHtml ? "html" : "pdf");
+  }, [note.id, hasPdf, hasHtml]);
 
   const handleSelectViewMode = useCallback((mode: "pdf" | "html") => {
     setViewMode(mode);
@@ -137,6 +199,212 @@ export function NoteReader({
       // Ignore
     }
   }, []);
+
+  // Annotation storage layout follows the view: PDF pages or paged A4 HTML.
+  // A complete HTML document is one continuous page; other notes are A4 pages.
+  const isDocument = useMemo(() => isHtmlDocument(renderedContent), [renderedContent]);
+  const annotationLayout: AnnotationLayout = 
+    viewMode !== "html" ? "pdf" : isDocument ? "html-page" : "html-a4";
+  const [htmlZoom, setHtmlZoom] = useState(1);
+  const htmlViewRef = useRef<HTMLDivElement>(null);
+  const readerRef = useRef<HTMLDivElement>(null);
+  const readerBodyRef = useRef<HTMLDivElement>(null);
+  const { isFullscreen, toggleFullscreen } = useFullscreen(readerRef, readerBodyRef);
+
+  // Full screen opens with larger pages; leaving restores the earlier zoom.
+  const [zoomBeforeFullscreen, setZoomBeforeFullscreen] = useState(1);
+  const [wasFullscreen, setWasFullscreen] = useState(false);
+  if (wasFullscreen !== isFullscreen) {
+    setWasFullscreen(isFullscreen);
+    if (isFullscreen) {
+      const room = Math.floor(((window.screen.width - 64) / (isDocument ? DOCUMENT_WIDTH : PAGE_WIDTH)) * 4) / 4;
+      setZoomBeforeFullscreen(htmlZoom);
+      setHtmlZoom(Math.max(htmlZoom, 1, Math.min(1.5, room)));
+    } else {
+      setHtmlZoom(zoomBeforeFullscreen);
+    }
+  }
+
+  // Each layout has its own pages, so reset in-memory annotation state when
+  // the layout changes (during render, before the new layers load from storage).
+  const [stateLayout, setStateLayout] = useState<AnnotationLayout>(annotationLayout);
+  if (stateLayout !== annotationLayout) {
+    setStateLayout(annotationLayout);
+    setPageStrokes({});
+    setPageShapes({});
+    setPageTextBoxes({});
+    setActiveTextId(null);
+    setActiveShapeId(null);
+    setActivePage(1);
+    setCanUndo(false);
+    setCanRedo(false);
+  }
+
+  // Account sync (design D10): device copy first, account copy 2s after changes.
+  const auth = useOptionalAuth();
+  const applySyncedPage = useCallback((page: number, data: PageAnnotations) => {
+    setPageStrokes((prev) => ({ ...prev, [page]: data.strokes }));
+    setPageShapes((prev) => ({ ...prev, [page]: data.shapes }));
+    setPageTextBoxes((prev) => ({ ...prev, [page]: data.textBoxes }));
+  }, []);
+  const syncUser = syncUserId !== undefined ? syncUserId : auth?.isLoading ? null : auth?.user?.uid ?? null;
+  const answers = useAnswerSync({ noteId: note.id, storageKey: formFieldsKey(note.id), userId: syncUser });
+  const [pageCountByLayout, setPageCountByLayout] = useState<Record<string, number>>({});
+  const noteHash = useMemo(() => contentHash(renderedContent || ""), [renderedContent]);
+  const {
+    status: annotationSyncStatus,
+    retry: retryAnnotationSync,
+    staleRevisionIds,
+  } = useAnnotationSync({
+    noteId: note.id,
+    layout: annotationLayout,
+    revisionId: revision?.id,
+    pageCount: pageCountByLayout[annotationLayout] ?? null,
+    contentHash: annotationLayout === "pdf" ? null : noteHash,
+    userId: syncUser,
+    strokes: pageStrokes,
+    shapes: pageShapes,
+    textBoxes: pageTextBoxes,
+    applyPage: applySyncedPage,
+  });
+
+  const openVersion = useCallback(
+    async (id: string) => {
+      setVersionError(null);
+      setComparing(false);
+      if (id === revision?.id) {
+        setViewing(null);
+        setVersionParam(null);
+        return;
+      }
+      try {
+        const v = await getVersion(id);
+        if (!v || v.note_id !== note.id) throw new Error("That version could not be found.");
+        setViewing(v);
+        setVersionParam(id);
+        setTool(null);
+        setActiveTextId(null);
+        setActiveShapeId(null);
+      } catch (err) {
+        setVersionError(errorText(err, "That version could not be opened."));
+      }
+    },
+    [note.id, revision?.id],
+  );
+  const closeVersion = useCallback(() => {
+    setViewing(null);
+    setComparing(false);
+    setVersionError(null);
+    setVersionParam(null);
+  }, []);
+  // Open the version named in the URL (?version=…) once the note has loaded.
+  useEffect(() => {
+    const id = versionParam();
+    if (!id || id === revision?.id) return;
+    const t = setTimeout(() => void openVersion(id), 0);
+    return () => clearTimeout(t);
+    // Only for the note that was opened with the link.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note.id]);
+  // Restoring is for the course's reviewers; the database checks it again.
+  const authUserId = auth?.user?.uid ?? null;
+  useEffect(() => {
+    let cancelled = false;
+    if (!authUserId) {
+      queueMicrotask(() => !cancelled && setCanRestore(false));
+    } else {
+      notesService
+        .canUserEditCourse(note.course_id)
+        .then((ok) => !cancelled && setCanRestore(ok))
+        .catch(() => !cancelled && setCanRestore(false));
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [authUserId, note.course_id]);
+  // Copies made from suggestions link to and from the original (task 10.4).
+  const [related, setRelated] = useState<Awaited<ReturnType<typeof getRelatedCopies>> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getRelatedCopies(note.id, note.forked_from_note_id)
+      .then((r) => !cancelled && setRelated(r))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [note.id, note.forked_from_note_id]);
+
+  // Anyone signed in can suggest edits; signed-out visitors are asked to sign in (task 9.1).
+  const suggestHref = `/edit?note=${note.id}&mode=suggest`;
+  const handleSuggest = useCallback(async () => {
+    if (!auth?.user) {
+      try {
+        await auth?.signInWithGoogle();
+      } catch {
+        return;
+      }
+    }
+    window.location.assign(suggestHref);
+  }, [auth, suggestHref]);
+
+  const handleRestore = useCallback(async () => {
+    if (!viewing) return;
+    setRestoring(true);
+    setVersionError(null);
+    try {
+      await restoreVersion(viewing.id);
+      // Reload the note so the restored version is shown as current.
+      setVersionParam(null);
+      window.location.reload();
+    } catch (err) {
+      setVersionError(`Restoring failed: ${errorText(err, "please try again.")}`);
+      setRestoring(false);
+    }
+  }, [viewing]);
+
+  // Persists one page of the current layout to localStorage.
+  const persistPage = useCallback(
+    (
+      pageNum: number,
+      data: { strokes?: AnnotationStroke[]; shapes?: AnnotationShape[]; textBoxes?: AnnotationTextBox[] }
+    ) => {
+      const entries: [ "annotations" | "shapes" | "textboxes", unknown[] | undefined][] = [
+        ["annotations", data.strokes],
+        ["shapes", data.shapes],
+        ["textboxes", data.textBoxes],
+      ];
+      try {
+        for (const [kind, value] of entries) {
+          if (!value) continue;
+          localStorage.setItem(annotationStorageKey(annotationLayout, kind, note.id, pageNum), JSON.stringify(value));
+          // PDF page 1 keeps mirroring the old single-layer keys, as before.
+          if (annotationLayout === "pdf" && pageNum === 1) {
+            localStorage.setItem(legacyAnnotationKey(kind, note.id), JSON.stringify(value));
+          }
+        }
+      } catch {
+        // Ignore storage errors (e.g. quota)
+      }
+    },
+    [annotationLayout, note.id]
+  );
+
+  // Removes one page of the current layout from localStorage.
+  const removePage = useCallback(
+    (pageNum: number) => {
+      try {
+        for (const kind of ANNOTATION_KINDS) {
+          localStorage.removeItem(annotationStorageKey(annotationLayout, kind, note.id, pageNum));
+          if (annotationLayout === "pdf" && pageNum === 1) {
+            localStorage.removeItem(legacyAnnotationKey(kind, note.id));
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    },
+    [annotationLayout, note.id]
+  );
 
   // Compute total strokes, shapes, and text boxes across all pages
   const totalAnnotationCount = useMemo(() => {
@@ -159,8 +427,6 @@ export function NoteReader({
     shapes: AnnotationShape[];
     textBoxes: AnnotationTextBox[];
   }[]>([]);
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
 
   // Latest page state refs to prevent stale closure captures during rapid history actions
   const pageStrokesRef = useRef(pageStrokes);
@@ -169,6 +435,12 @@ export function NoteReader({
   pageStrokesRef.current = pageStrokes;
   pageShapesRef.current = pageShapes;
   pageTextBoxesRef.current = pageTextBoxes;
+
+  // Undo history belongs to one layout.
+  useEffect(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+  }, [annotationLayout]);
 
   const updateHistoryState = useCallback(() => {
     setCanUndo(undoStackRef.current.length > 0);
@@ -227,43 +499,14 @@ export function NoteReader({
     setPageTextBoxes((prev) => ({ ...prev, [pageNum]: targetSnapshot.textBoxes }));
 
     // Persist restored state to localStorage
-    try {
-      localStorage.setItem(
-        `vilekh_pdf_annotations_${note.id}_page_${pageNum}`,
-        JSON.stringify(targetSnapshot.strokes)
-      );
-      localStorage.setItem(
-        `vilekh_pdf_shapes_${note.id}_page_${pageNum}`,
-        JSON.stringify(targetSnapshot.shapes)
-      );
-      localStorage.setItem(
-        `vilekh_pdf_textboxes_${note.id}_page_${pageNum}`,
-        JSON.stringify(targetSnapshot.textBoxes)
-      );
-      if (pageNum === 1) {
-        localStorage.setItem(
-          `vilekh_annotations_${note.id}`,
-          JSON.stringify(targetSnapshot.strokes)
-        );
-        localStorage.setItem(
-          `vilekh_shapes_${note.id}`,
-          JSON.stringify(targetSnapshot.shapes)
-        );
-        localStorage.setItem(
-          `vilekh_textboxes_${note.id}`,
-          JSON.stringify(targetSnapshot.textBoxes)
-        );
-      }
-    } catch {
-      // Ignore
-    }
+    persistPage(pageNum, targetSnapshot);
 
     if (activePage !== pageNum) {
       setActivePage(pageNum);
     }
 
     updateHistoryState();
-  }, [activePage, note.id, updateHistoryState]);
+  }, [activePage, persistPage, updateHistoryState]);
 
   // Redo previously undone action
   const handleRedo = useCallback(() => {
@@ -290,43 +533,14 @@ export function NoteReader({
     setPageTextBoxes((prev) => ({ ...prev, [pageNum]: targetSnapshot.textBoxes }));
 
     // Persist restored state to localStorage
-    try {
-      localStorage.setItem(
-        `vilekh_pdf_annotations_${note.id}_page_${pageNum}`,
-        JSON.stringify(targetSnapshot.strokes)
-      );
-      localStorage.setItem(
-        `vilekh_pdf_shapes_${note.id}_page_${pageNum}`,
-        JSON.stringify(targetSnapshot.shapes)
-      );
-      localStorage.setItem(
-        `vilekh_pdf_textboxes_${note.id}_page_${pageNum}`,
-        JSON.stringify(targetSnapshot.textBoxes)
-      );
-      if (pageNum === 1) {
-        localStorage.setItem(
-          `vilekh_annotations_${note.id}`,
-          JSON.stringify(targetSnapshot.strokes)
-        );
-        localStorage.setItem(
-          `vilekh_shapes_${note.id}`,
-          JSON.stringify(targetSnapshot.shapes)
-        );
-        localStorage.setItem(
-          `vilekh_textboxes_${note.id}`,
-          JSON.stringify(targetSnapshot.textBoxes)
-        );
-      }
-    } catch {
-      // Ignore
-    }
+    persistPage(pageNum, targetSnapshot);
 
     if (activePage !== pageNum) {
       setActivePage(pageNum);
     }
 
     updateHistoryState();
-  }, [activePage, note.id, updateHistoryState]);
+  }, [activePage, persistPage, updateHistoryState]);
 
   // Global keyboard shortcuts for Undo (Ctrl+Z) and Redo (Ctrl+Y / Ctrl+Shift+Z)
   useEffect(() => {
@@ -374,36 +588,14 @@ export function NoteReader({
       setPageStrokes({});
       setPageShapes({});
       setPageTextBoxes({});
-      try {
-        for (let i = 1; i <= 100; i++) {
-          localStorage.removeItem(`vilekh_pdf_annotations_${note.id}_page_${i}`);
-          localStorage.removeItem(`vilekh_pdf_shapes_${note.id}_page_${i}`);
-          localStorage.removeItem(`vilekh_pdf_textboxes_${note.id}_page_${i}`);
-        }
-        localStorage.removeItem(`vilekh_annotations_${note.id}`);
-        localStorage.removeItem(`vilekh_shapes_${note.id}`);
-        localStorage.removeItem(`vilekh_textboxes_${note.id}`);
-      } catch {
-        // Ignore
-      }
+      for (let i = 1; i <= 100; i++) removePage(i);
     } else {
       setPageStrokes((prev) => ({ ...prev, [activePage]: [] }));
       setPageShapes((prev) => ({ ...prev, [activePage]: [] }));
       setPageTextBoxes((prev) => ({ ...prev, [activePage]: [] }));
-      try {
-        localStorage.removeItem(`vilekh_pdf_annotations_${note.id}_page_${activePage}`);
-        localStorage.removeItem(`vilekh_pdf_shapes_${note.id}_page_${activePage}`);
-        localStorage.removeItem(`vilekh_pdf_textboxes_${note.id}_page_${activePage}`);
-        if (activePage === 1) {
-          localStorage.removeItem(`vilekh_annotations_${note.id}`);
-          localStorage.removeItem(`vilekh_shapes_${note.id}`);
-          localStorage.removeItem(`vilekh_textboxes_${note.id}`);
-        }
-      } catch {
-        // Ignore
-      }
+      removePage(activePage);
     }
-  }, [totalAnnotationCount, activePage, handleRecordSnapshot, note.id]);
+  }, [totalAnnotationCount, activePage, handleRecordSnapshot, removePage]);
 
   // Find currently active text box across pages
   const activeTextBox = useMemo(() => {
@@ -440,7 +632,7 @@ export function NoteReader({
             next[pNum] = updatedList;
             try {
               localStorage.setItem(
-                `vilekh_pdf_textboxes_${note.id}_page_${pNum}`,
+                annotationStorageKey(annotationLayout, "textboxes", note.id, pNum),
                 JSON.stringify(updatedList)
               );
             } catch {
@@ -452,7 +644,7 @@ export function NoteReader({
         return next;
       });
     },
-    [activeTextId, note.id]
+    [activeTextId, annotationLayout, note.id]
   );
 
   const handleDeleteActiveTextBox = useCallback(() => {
@@ -472,7 +664,7 @@ export function NoteReader({
           next[pNum] = updatedList;
           try {
             localStorage.setItem(
-              `vilekh_pdf_textboxes_${note.id}_page_${pNum}`,
+              annotationStorageKey(annotationLayout, "textboxes", note.id, pNum),
               JSON.stringify(updatedList)
             );
           } catch {
@@ -484,7 +676,7 @@ export function NoteReader({
       return next;
     });
     setActiveTextId(null);
-  }, [activeTextId, handleRecordSnapshot, note.id, pageShapes, pageStrokes]);
+  }, [activeTextId, annotationLayout, handleRecordSnapshot, note.id, pageShapes, pageStrokes]);
 
   const handleUpdateActiveShape = useCallback(
     (updates: Partial<AnnotationShape>) => {
@@ -501,7 +693,7 @@ export function NoteReader({
             next[pNum] = updatedList;
             try {
               localStorage.setItem(
-                `vilekh_pdf_shapes_${note.id}_page_${pNum}`,
+                annotationStorageKey(annotationLayout, "shapes", note.id, pNum),
                 JSON.stringify(updatedList)
               );
             } catch {
@@ -513,7 +705,7 @@ export function NoteReader({
         return next;
       });
     },
-    [activeShapeId, note.id]
+    [activeShapeId, annotationLayout, note.id]
   );
 
   const handleDeleteActiveShape = useCallback(() => {
@@ -533,7 +725,7 @@ export function NoteReader({
           next[pNum] = updatedList;
           try {
             localStorage.setItem(
-              `vilekh_pdf_shapes_${note.id}_page_${pNum}`,
+              annotationStorageKey(annotationLayout, "shapes", note.id, pNum),
               JSON.stringify(updatedList)
             );
           } catch {
@@ -545,11 +737,34 @@ export function NoteReader({
       return next;
     });
     setActiveShapeId(null);
-  }, [activeShapeId, handleRecordSnapshot, note.id, pageStrokes, pageTextBoxes]);
+  }, [activeShapeId, annotationLayout, handleRecordSnapshot, note.id, pageStrokes, pageTextBoxes]);
 
   // One-click Client-Side PDF vector export via pdf-lib
   const handleExportPdf = useCallback(async () => {
-    if (viewMode === "html" || !effectivePdfSource) {
+    if (viewMode === "html") {
+      // Paged HTML: print the same A4 pages with their annotations (design D4).
+      const wrapper = htmlViewRef.current;
+      const viewerHost = wrapper?.querySelector<HTMLElement>(".html-sandboxed-viewer-host");
+      if (!wrapper || !viewerHost) {
+        window.print();
+        return;
+      }
+      try {
+        setIsExporting(true);
+        // Deselect so no selection handles or edit controls are printed.
+        setActiveTextId(null);
+        setActiveShapeId(null);
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        await printPagedHtml({ viewerHost, overlayRoot: wrapper, title: note.title });
+      } catch (err) {
+        console.error("Failed to export HTML version:", err);
+        window.print();
+      } finally {
+        setIsExporting(false);
+      }
+      return;
+    }
+    if (!effectivePdfSource) {
       window.print();
       return;
     }
@@ -600,6 +815,7 @@ export function NoteReader({
       <AnnotationLayer
         noteId={note.id}
         pageNumber={pageNum}
+        layout={annotationLayout}
         scale={dims.scale}
         intrinsicWidth={dims.intrinsicWidth}
         intrinsicHeight={dims.intrinsicHeight}
@@ -631,6 +847,7 @@ export function NoteReader({
     ),
     [
       note.id,
+      annotationLayout,
       tool,
       color,
       penWidth,
@@ -649,10 +866,28 @@ export function NoteReader({
   );
 
   return (
-    <div className="w-full min-h-screen py-3 px-2 sm:px-6 print:p-0 print:m-0 print:w-full">
-      <div className="max-w-5xl mx-auto transition-colors print:max-w-none print:p-0 print:m-0">
-        {/* Sticky Non-Scrolling Annotation Dock (Hidden in Print) */}
-        <AnnotationToolbar
+    <div
+      ref={readerRef}
+      data-reader-scroller={isFullscreen ? "" : undefined}
+      className={`w-full py-3 px-2 sm:px-6 print:p-0 print:m-0 print:w-full ${
+        isFullscreen ? "fixed inset-0 z-[90] overflow-auto bg-[#F5F2EB] dark:bg-[#181716] print:static" : "min-h-screen"
+      }`}
+    >
+      {isFullscreen && (
+        <button
+          type="button"
+          onClick={toggleFullscreen}
+          className="print:hidden fixed right-5 bottom-5 z-[95] inline-flex items-center gap-1.5 rounded-full bg-[#2D2926]/80 hover:bg-[#2D2926] px-3 py-2 text-xs font-medium text-white shadow-lg cursor-pointer"
+          title="Exit full screen (Esc)"
+          aria-label="Exit full screen"
+        >
+          <Minimize className="w-4 h-4" />
+          <span className="hidden sm:inline">Esc</span>
+        </button>
+      )}
+      <div ref={readerBodyRef} className={`${isFullscreen ? (viewMode === "pdf" ? "max-w-6xl" : "max-w-none") : "max-w-5xl"} mx-auto transition-colors print:max-w-none print:p-0 print:m-0`}>
+        {/* Sticky Non-Scrolling Annotation Dock (Hidden in Print); off while viewing a past version */}
+        {!viewing && <AnnotationToolbar
           tool={tool}
           onSelectTool={(newTool) => {
             setTool(newTool);
@@ -678,7 +913,7 @@ export function NoteReader({
           onClear={handleClear}
           onExportPdf={handleExportPdf}
           isExporting={isExporting}
-          className="mb-4"
+          className={isFullscreen ? "mb-4 top-0!" : "mb-4"}
           penWidth={penWidth}
           onSelectPenWidth={setPenWidth}
           activeTextBox={activeTextBox}
@@ -693,7 +928,7 @@ export function NoteReader({
           onSelectShapeWidth={setShapeWidth}
           shapeFillOpacity={shapeFillOpacity}
           onSelectShapeFillOpacity={setShapeFillOpacity}
-        />
+        />}
 
         {/* Slim Meta Breadcrumb Bar with PDF / Web Version Switcher */}
         <div className="print:hidden flex flex-wrap items-center justify-between gap-3 pb-3 mb-4 border-b border-[#E8E3D9] dark:border-[#33312E] text-xs text-[#757069] dark:text-[#948F86]">
@@ -746,6 +981,17 @@ export function NoteReader({
           </div>
 
           <div className="flex items-center gap-3">
+            <SyncChip
+              status={combineSyncStatus(
+                totalAnnotationCount > 0 ? annotationSyncStatus : "idle",
+                answers.hasData ? answers.status : "idle",
+              )}
+              hasAnnotations={totalAnnotationCount > 0 || answers.hasData}
+              onRetry={() => {
+                retryAnnotationSync();
+                answers.retry();
+              }}
+            />
             <span className="flex items-center gap-1.5" suppressHydrationWarning>
               <Calendar className="w-3.5 h-3.5" />
               Updated {formatDate(revision?.updated_at || note.updated_at)}
@@ -754,8 +1000,131 @@ export function NoteReader({
               <CheckCircle2 className="w-3 h-3" />
               Verified Notes
             </span>
+            {hasHtml && (
+              <button
+                type="button"
+                onClick={handleSuggest}
+                className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-[#BFD3F2] dark:border-[#2C3E5C] text-[#1E3A8A] dark:text-[#AFC6F0] font-medium hover:bg-[#EEF4FF] dark:hover:bg-[#1B2433] cursor-pointer"
+                title={auth?.user ? "Propose changes for a course editor to review" : "Sign in to suggest edits"}
+              >
+                <GitPullRequestDraft className="w-3.5 h-3.5" />
+                <span>Suggest edits</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setCommentsOpen((o) => !o)}
+              aria-pressed={commentsOpen}
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-[#E8E3D9] dark:border-[#383532] font-medium hover:text-[#2D2926] dark:hover:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] cursor-pointer"
+              title="Comments on this note"
+            >
+              <MessageSquareText className="w-3.5 h-3.5" />
+              <span>Comments{commentCount > 0 ? ` (${commentCount})` : ""}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setHistoryOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-[#E8E3D9] dark:border-[#383532] font-medium hover:text-[#2D2926] dark:hover:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] cursor-pointer"
+              title="Version history"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>History</span>
+            </button>
+            <button
+              type="button"
+              onClick={toggleFullscreen}
+              aria-pressed={isFullscreen}
+              className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-[#E8E3D9] dark:border-[#383532] font-medium hover:text-[#2D2926] dark:hover:text-[#E3DFD7] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27] cursor-pointer"
+              title={isFullscreen ? "Exit full screen (Esc)" : "Full screen (F)"}
+            >
+              {isFullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
+              <span>{isFullscreen ? "Exit full screen" : "Full screen"}</span>
+            </button>
           </div>
         </div>
+
+        {related && (related.original || related.copies.length > 0) && (
+          <div className="print:hidden mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-[#757069] dark:text-[#948F86]">
+            <Copy className="w-3.5 h-3.5" />
+            {related.original && (
+              <span>
+                Copy of{" "}
+                <Link href={`/notes?course=${related.original.course_id}&note=${related.original.id}`} className="underline text-[#A85D44]">
+                  {related.original.title}
+                </Link>
+              </span>
+            )}
+            {related.copies.length > 0 && (
+              <span>
+                Copies of this note:{" "}
+                {related.copies.map((c, i) => (
+                  <React.Fragment key={c.id}>
+                    {i > 0 && ", "}
+                    <Link href={`/notes?course=${c.course_id}&note=${c.id}`} className="underline text-[#A85D44]">{c.title}</Link>
+                  </React.Fragment>
+                ))}
+              </span>
+            )}
+          </div>
+        )}
+
+        <NoteComments
+          noteId={note.id}
+          revisionId={revision?.id ?? null}
+          root={viewMode === "html" && !viewing ? contentRoot : null}
+          user={auth?.user ? { id: auth.user.uid, name: auth.profile?.display_name || auth.user.displayName || "You" } : null}
+          isReviewer={canRestore}
+          canComment={!viewing && viewMode === "html"}
+          open={commentsOpen}
+          onOpenChange={setCommentsOpen}
+          onSignIn={async () => {
+            await auth?.signInWithGoogle();
+          }}
+          onCount={setCommentCount}
+          focusId={focusComment}
+        />
+
+        {historyOpen && (
+          <VersionHistoryPanel
+            noteId={note.id}
+            currentRevisionId={revision?.id}
+            viewingId={viewing?.id}
+            onView={(id) => {
+              setHistoryOpen(false);
+              void openVersion(id);
+            }}
+            onClose={() => setHistoryOpen(false)}
+          />
+        )}
+
+        {viewing ? (
+          <PastVersionBanner
+            versionNumber={viewing.version_number}
+            createdAt={viewing.created_at}
+            comparing={comparing}
+            canRestore={canRestore}
+            restoring={restoring}
+            error={versionError}
+            onCompare={() => setComparing((c) => !c)}
+            onRestore={handleRestore}
+            onBack={closeVersion}
+          />
+        ) : (
+          versionError && (
+            <div role="alert" className="print:hidden mb-4 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 text-xs text-red-800 dark:text-red-300">
+              {versionError}
+            </div>
+          )
+        )}
+
+        {!viewing && staleRevisionIds.length > 0 && (
+          <OlderVersionNotice
+            onView={(id) => void openVersion(id)}
+            key={`${note.id}:${annotationLayout}:${staleRevisionIds.join()}`}
+            revisionIds={staleRevisionIds}
+            currentVersion={revision?.version_number ?? null}
+          />
+        )}
 
         {/* Informational banner when database has an expired blob: URL from a prior session */}
         {isStaleBlobUrl && (
@@ -770,43 +1139,92 @@ export function NoteReader({
         )}
 
         {/* Document Body (PDF Viewer or Web HTML Viewer) */}
-        {viewMode === "pdf" && effectivePdfSource ? (
+        {viewing && comparing ? (
+          <HtmlDiffViewer
+            baseHtml={pastContent}
+            proposedHtml={renderedContent}
+            baseLabel={`v${viewing.version_number}`}
+            proposedLabel={revision?.version_number ? `v${revision.version_number} (current)` : "Current"}
+          />
+        ) : viewMode === "pdf" && effectivePdfSource && !viewing ? (
           <PdfViewer
+            fullscreen={isFullscreen}
             pdfSource={effectivePdfSource}
             activePage={activePage}
             onActivePageChange={setActivePage}
             renderAnnotationLayer={renderAnnotationLayer}
           />
-        ) : viewMode === "html" && renderedContent ? (
-          /* HTML / Web Version View */
-          <div className="relative w-full transition-all bg-[#FAF8F5] dark:bg-[#1C1B19] rounded-2xl p-6 sm:p-12 shadow-sm border border-[#E8E3D9] dark:border-[#33312E] min-h-[600px]">
-            <HtmlSandboxedViewer html={renderedContent} />
-            <AnnotationLayer
-              noteId={note.id}
-              pageNumber={1}
-              scale={1.0}
-              tool={tool}
-              color={color}
-              penWidth={penWidth}
-              shapeWidth={shapeWidth}
-              shapeFillOpacity={shapeFillOpacity}
-              strokes={pageStrokes[1] || []}
-              onChangeStrokes={(strokes) => handlePageStrokesChange(1, strokes)}
-              shapes={pageShapes[1] || []}
-              onChangeShapes={(shapes) => handlePageShapesChange(1, shapes)}
-              textBoxes={pageTextBoxes[1] || []}
-              onChangeTextBoxes={(boxes) => handlePageTextBoxesChange(1, boxes)}
-              activeShapeId={activeShapeId}
-              onSelectShape={(id) => {
-                setActiveShapeId(id);
-                if (id) setActiveTextId(null);
-              }}
-              activeTextId={activeTextId}
-              onSelectText={(id) => {
-                setActiveTextId(id);
-                if (id) setActiveShapeId(null);
-              }}
-              onRecordSnapshot={(snapshot) => handleRecordSnapshot(1, snapshot)}
+        ) : (viewMode === "html" || viewing) && displayContent ? (
+          /* HTML / Web Version View: fixed A4 pages scaled to fit (design D1) */
+          <div ref={htmlViewRef} className={`relative w-full rounded-2xl ${isDocument ? "bg-[#F1F5F9] p-2" : "bg-[#EFEBE3] dark:bg-[#161514] p-2 sm:p-6"} border border-[#E8E3D9] dark:border-[#33312E] print:p-0 print:border-0 print:bg-transparent`}>
+            <div className="print:hidden sticky top-2 z-20 mb-3 flex justify-end">
+              <div className="inline-flex items-center gap-1 rounded-lg border border-[#E8E3D9] dark:border-[#383532] bg-white/90 dark:bg-[#1E1D1B]/90 px-1 py-0.5 text-xs text-[#757069] dark:text-[#948F86] shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setHtmlZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100))}
+                  disabled={htmlZoom <= 0.5}
+                  className="p-1 rounded hover:text-[#2D2926] dark:hover:text-[#E3DFD7] disabled:opacity-40 cursor-pointer"
+                  title="Zoom out"
+                  aria-label="Zoom out"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHtmlZoom(1)}
+                  className="min-w-[3rem] px-1 font-medium tabular-nums cursor-pointer"
+                  title="Fit to width"
+                >
+                  {Math.round(htmlZoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHtmlZoom((z) => Math.min(3, Math.round((z + 0.25) * 100) / 100))}
+                  disabled={htmlZoom >= 3}
+                  className="p-1 rounded hover:text-[#2D2926] dark:hover:text-[#E3DFD7] disabled:opacity-40 cursor-pointer"
+                  title="Zoom in"
+                  aria-label="Zoom in"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+            <HtmlSandboxedViewer
+              html={displayContent}
+              paged
+              zoom={htmlZoom}
+              fieldsKey={viewing ? undefined : formFieldsKey(note.id)}
+              onContentRoot={setContentRoot}
+              onLayout={({ pageCount }) =>
+                !viewing && setPageCountByLayout((prev) =>
+                  prev[annotationLayout] === pageCount ? prev : { ...prev, [annotationLayout]: pageCount },
+                )
+              }
+              renderPageOverlay={viewing ? undefined : (pageIndex, { scale, pageWidth, pageHeight }) => (
+                <div
+                  className="pointer-events-none absolute inset-0"
+                  onPointerDownCapture={(e) => {
+                    setActivePage(pageIndex + 1);
+                    // The text tool uses the note's own field when there is one.
+                    if (tool !== "text" || (e.target as Element).closest(".annotation-text-box")) return;
+                    const host = htmlViewRef.current?.querySelector(".html-sandboxed-viewer-host");
+                    const field = fieldAtPoint(host?.shadowRoot, e.clientX, e.clientY);
+                    if (!field) return;
+                    e.stopPropagation();
+                    setActiveTextId(null);
+                    setTool(null);
+                    requestAnimationFrame(() => field.focus());
+                  }}
+                >
+                  {renderAnnotationLayer(pageIndex + 1, {
+                    scale,
+                    width: pageWidth * scale,
+                    height: pageHeight * scale,
+                    intrinsicWidth: pageWidth,
+                    intrinsicHeight: pageHeight,
+                  })}
+                </div>
+              )}
             />
           </div>
         ) : viewMode === "pdf" && !effectivePdfSource ? (
@@ -854,5 +1272,114 @@ export function NoteReader({
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Tells the reader their annotations were made on an earlier version of the
+ * note, so marks may no longer sit on the same text (task 6.3). Dismissed per
+ * visit.
+ */
+function OlderVersionNotice({
+  revisionIds,
+  currentVersion,
+  onView,
+}: {
+  revisionIds: string[];
+  currentVersion: number | null;
+  onView: (revisionId: string) => void;
+}) {
+  const [versions, setVersions] = useState<{ id: string; n: number }[] | null>(null);
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void createClient()
+      .from("revisions")
+      .select("id, version_number")
+      .in("id", revisionIds)
+      .then(({ data }) => {
+        if (cancelled) return;
+        const list = (data ?? [])
+          .filter((r: { version_number: number | null }) => typeof r.version_number === "number")
+          .map((r: { id: string; version_number: number }) => ({ id: r.id, n: r.version_number }));
+        setVersions(list.sort((a, b) => a.n - b.n));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [revisionIds]);
+  if (dismissed || versions === null) return null;
+  const made = versions.length ? versions.map((v) => `v${v.n}`).join(", ") : "an earlier version";
+  return (
+    <div
+      role="status"
+      className="print:hidden mb-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 flex items-start gap-2 text-xs text-amber-800 dark:text-amber-300"
+    >
+      <AlertCircle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400 mt-px" />
+      <span className="flex-1">
+        Your annotations were made on {made}; the note has changed since
+        {currentVersion ? ` (now v${currentVersion})` : ""}, so some marks may not line up with the text.
+      </span>
+      {versions.length > 0 && (
+        <button
+          type="button"
+          onClick={() => onView(versions[0].id)}
+          className="shrink-0 font-medium underline underline-offset-2 cursor-pointer hover:opacity-80"
+        >
+          View v{versions[0].n}
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => setDismissed(true)}
+        className="shrink-0 font-medium underline underline-offset-2 cursor-pointer hover:opacity-80"
+      >
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
+/** A readable message from an Error or a Supabase error object. */
+function errorText(err: unknown, fallback: string): string {
+  const message = err && typeof err === "object" && "message" in err ? String((err as { message: unknown }).message) : "";
+  return message || fallback;
+}
+
+/** One status for drawings and answers: problems first, then saving, then saved. */
+function combineSyncStatus(...all: SyncStatus[]): SyncStatus {
+  for (const s of ["error", "signed-out", "saving", "saved"] as SyncStatus[]) if (all.includes(s)) return s;
+  return "idle";
+}
+
+/** Shows whether the reader's annotations and answers are saved to their account. */
+function SyncChip({ status, hasAnnotations, onRetry }: { status: SyncStatus; hasAnnotations: boolean; onRetry: () => void }) {
+  if (status === "idle" || (!hasAnnotations && status !== "saving" && status !== "error")) return null;
+  const base = "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium";
+  if (status === "saving") {
+    return (
+      <span className={`${base} text-[#757069] dark:text-[#948F86]`} role="status">
+        <Loader2 className="w-3 h-3 animate-spin" /> Saving…
+      </span>
+    );
+  }
+  if (status === "saved") {
+    return (
+      <span className={`${base} text-[#5D7063] dark:text-[#768D7D]`} role="status" title="Your annotations and answers are saved to your account">
+        <Cloud className="w-3 h-3" /> Saved
+      </span>
+    );
+  }
+  const signedOut = status === "signed-out";
+  return (
+    <button
+      type="button"
+      onClick={signedOut ? undefined : onRetry}
+      className={`${base} bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 ${signedOut ? "cursor-default" : "cursor-pointer"}`}
+      title={signedOut ? "Saved in this browser only. Sign in to save your annotations and answers to your account." : "Saving to your account failed. Click to try again."}
+      role="status"
+    >
+      <CloudOff className="w-3 h-3" /> Not synced
+    </button>
   );
 }

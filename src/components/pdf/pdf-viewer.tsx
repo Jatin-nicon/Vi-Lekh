@@ -12,6 +12,8 @@ export interface PdfViewerProps {
   onDocumentLoaded?: (doc: PDFDocumentProxy, pageDimensions: Record<number, PageDimensions>) => void;
   renderAnnotationLayer?: (pageNumber: number, dims: PageDimensions) => React.ReactNode;
   className?: string;
+  /** True while the reader is full screen. */
+  fullscreen?: boolean;
 }
 
 export function PdfViewer({
@@ -21,6 +23,7 @@ export function PdfViewer({
   onDocumentLoaded,
   renderAnnotationLayer,
   className = "",
+  fullscreen = false,
 }: PdfViewerProps) {
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [pages, setPages] = useState<PDFPageProxy[]>([]);
@@ -209,6 +212,19 @@ export function PdfViewer({
       }
     };
   }, []);
+
+  // Full screen opens with larger pages; leaving restores the earlier zoom.
+  const scaleBeforeFullscreenRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (fullscreen && scaleBeforeFullscreenRef.current === null) {
+      scaleBeforeFullscreenRef.current = targetScaleRef.current;
+      const room = (window.screen.width - 96) / 595;
+      animateScaleTo(Math.max(targetScaleRef.current, Math.min(1.9, room)));
+    } else if (!fullscreen && scaleBeforeFullscreenRef.current !== null) {
+      animateScaleTo(scaleBeforeFullscreenRef.current);
+      scaleBeforeFullscreenRef.current = null;
+    }
+  }, [fullscreen, animateScaleTo]);
 
   const handleZoomIn = () => {
     animateScaleTo(targetScaleRef.current + 0.15);

@@ -7,6 +7,7 @@ import { useAuth, AuthProvider } from "@/lib/auth/auth-context";
 import { checkCourseEditAccess, isSuperAdmin as checkIsSuperAdmin } from "@/lib/auth/roles";
 import { HtmlNoteEditor } from "@/components/editor/html-note-editor";
 import { LivePreview } from "@/components/editor/live-preview";
+import { SuggestEditor } from "@/components/editor/suggest-editor";
 import { blocksToHtml, htmlToBlocks } from "@/lib/editor/block-converter";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/auth/user-menu";
@@ -34,8 +35,16 @@ function EditContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const noteId = searchParams.get("note");
+  // Suggest mode: anyone signed in edits a private draft that goes to review (task 9.2).
+  const suggestMode = searchParams.get("mode") === "suggest";
+  const [currentRevisionId, setCurrentRevisionId] = useState<string | null>(null);
 
   const { user, profile, isLoading: authLoading } = useAuth();
+  // Recorded on Case Study / My Experience / Findings sections the user inserts.
+  const contributor = useMemo(
+    () => (profile ? { id: profile.id, name: profile.display_name } : null),
+    [profile]
+  );
   const [note, setNote] = useState<Note | null>(null);
   const [noteTitle, setNoteTitle] = useState("");
   const [courseRole, setCourseRole] = useState<CourseRole>("viewer");
@@ -62,6 +71,10 @@ function EditContent() {
       if (authLoading) return;
 
       if (!user) {
+        if (suggestMode) {
+          setLoading(false);
+          return;
+        }
         alert("Please sign in with an authorized editor account to access the editor.");
         router.replace("/");
         return;
@@ -79,6 +92,13 @@ function EditContent() {
         setNoteTitle(n.title);
         setPdfUrl(n.pdf_url || null);
         setPdfName(n.pdf_name || null);
+        setCurrentRevisionId(rev?.id ?? null);
+
+        if (suggestMode) {
+          setHtml(blocksToHtml(rev?.blocks ?? []));
+          setIsAuthorized(true);
+          return;
+        }
 
         // Check Course-Level Authorization
         const authorized = await checkCourseEditAccess(n.course_id, user);
@@ -121,7 +141,7 @@ function EditContent() {
     }
 
     initEditor();
-  }, [noteId, user, authLoading, router]);
+  }, [noteId, user, authLoading, router, suggestMode]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -184,6 +204,50 @@ function EditContent() {
       <div className="min-h-screen flex items-center justify-center bg-[#F5F2EB] dark:bg-[#181716] text-[#757069]">
         <Loader2 className="w-6 h-6 animate-spin text-[#A85D44] mr-2" />
         <span className="text-sm font-medium">Loading authorized note editor...</span>
+      </div>
+    );
+  }
+
+  if (suggestMode && !user) {
+    return (
+      <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] p-8 text-center flex flex-col items-center justify-center gap-3">
+        <h2 className="text-lg font-bold">Sign in to suggest edits</h2>
+        <p className="text-xs text-[#757069]">Suggestions are saved to your account so you can come back to them.</p>
+        <UserMenu />
+      </div>
+    );
+  }
+
+  if (suggestMode && note && user && currentRevisionId) {
+    return (
+      <SuggestEditor
+        note={note}
+        currentRevisionId={currentRevisionId}
+        currentHtml={html}
+        userId={user.uid}
+      />
+    );
+  }
+
+  // Suggest mode never falls through to the HTML code editor below.
+  if (suggestMode) {
+    return (
+      <div className="min-h-screen bg-[#F5F2EB] dark:bg-[#181716] text-[#2D2926] dark:text-[#E3DFD7] p-8 text-center flex flex-col items-center justify-center gap-3">
+        <h2 className="text-lg font-bold">{note ? "This note can't take suggestions yet" : "Note not found"}</h2>
+        <p className="text-xs text-[#757069] max-w-sm">
+          {error
+            ? error
+            : note
+              ? "It has no published content to suggest changes on. Try again once the course editor has published it."
+              : "This note doesn't exist or you can't open it."}
+        </p>
+        <Link
+          href={note ? `/notes?course=${note.course_id}&note=${note.id}` : "/"}
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#A85D44] text-white text-xs font-semibold"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back to the note</span>
+        </Link>
       </div>
     );
   }
@@ -307,14 +371,14 @@ function EditContent() {
         {/* Dynamic View Modes: Editor | Split | Reader Preview */}
         {editorViewMode === "split" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-            <HtmlNoteEditor value={html} onChange={setHtml} />
+            <HtmlNoteEditor value={html} onChange={setHtml} contributor={contributor} />
             <LivePreview html={html} noteTitle={noteTitle || note.title} />
           </div>
         )}
 
         {editorViewMode === "editor" && (
           <div className="max-w-4xl mx-auto">
-            <HtmlNoteEditor value={html} onChange={setHtml} />
+            <HtmlNoteEditor value={html} onChange={setHtml} contributor={contributor} />
           </div>
         )}
 

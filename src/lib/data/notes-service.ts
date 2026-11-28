@@ -675,25 +675,13 @@ export const notesService = {
       });
     }
 
-    const { data: rev, error: revError } = await supabase
-      .from("revisions")
-      .insert({
-        note_id: noteRecord.id,
-        author_id: user.uid,
-        blocks,
-        change_summary: "Initial note creation",
-        status: "direct_publish",
-      })
-      .select()
-      .single();
-
-    if (!revError && rev) {
-      await supabase
-        .from("notes")
-        .update({ current_revision_id: rev.id })
-        .eq("id", noteRecord.id);
-      noteRecord.current_revision_id = rev.id;
-    }
+    const { data: rev, error: revError } = await supabase.rpc("publish_version", {
+      p_note_id: noteRecord.id,
+      p_blocks: blocks,
+      p_summary: "Initial note creation",
+    });
+    if (revError) throw revError;
+    noteRecord.current_revision_id = (rev as Revision).id;
 
     return noteRecord as Note;
   },
@@ -1139,33 +1127,21 @@ export const notesService = {
       }
     }
 
-    // 3. Create direct_publish revision
-    const { data: rev, error: revError } = await supabase
-      .from("revisions")
-      .insert({
-        note_id: data.noteId,
-        author_id: user.uid,
-        base_revision_id: note.current_revision_id || null,
-        blocks: data.blocks,
-        change_summary: data.changeSummary || "Direct publish from editor",
-        status: "direct_publish",
-      })
-      .select()
-      .single();
-    if (revError) throw revError;
-
-    // 4. Atomically update note title and current revision
+    // 3. Publish the new version and title in one transaction
     const slug = data.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+    const { error: publishError } = await supabase.rpc("publish_version", {
+      p_note_id: data.noteId,
+      p_blocks: data.blocks,
+      p_summary: data.changeSummary || "Direct publish from editor",
+      p_title: data.title,
+      p_slug: slug,
+    });
+    if (publishError) throw publishError;
+
     const { data: updatedNote, error: updateError } = await supabase
       .from("notes")
-      .update({
-        title: data.title,
-        slug,
-        current_revision_id: rev.id,
-        updated_at: new Date().toISOString(),
-      })
+      .select("*")
       .eq("id", data.noteId)
-      .select()
       .single();
     if (updateError) throw updateError;
 

@@ -23,7 +23,9 @@ import {
   Bold,
   Italic,
   Check,
+  PenLine,
 } from "lucide-react";
+import { saveTextStyle } from "@/lib/annotations/text-style";
 import type { AnnotationShape, AnnotationTextBox } from "./annotation-layer";
 
 export type ShapeType = "rectangle" | "circle" | "arrow" | "line" | "star" | "cloud";
@@ -56,6 +58,7 @@ export const COLOR_PALETTE: ColorOption[] = [
   { label: "Amber Gold", value: "#D97706", highlighterValue: "rgba(245, 158, 11, 0.45)" },
   { label: "Emerald", value: "#059669", highlighterValue: "rgba(16, 185, 129, 0.35)" },
   { label: "Azure", value: "#2563EB", highlighterValue: "rgba(59, 130, 246, 0.35)" },
+  { label: "Notebook Blue", value: "#1A5FB4", highlighterValue: "rgba(26, 95, 180, 0.35)" },
 ];
 
 export const PEN_STROKE_WIDTHS = [
@@ -287,6 +290,26 @@ export function AnnotationToolbar({
 
           <span className="w-px h-4 bg-[#E8E3D9] dark:border-[#33312E] mx-1 shrink-0" />
 
+          {/* Handwriting toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              const font = activeTextBox.font === "hand" ? "sans" : "hand";
+              onUpdateActiveTextBox?.({ font });
+              saveTextStyle({ font });
+            }}
+            aria-pressed={activeTextBox.font === "hand"}
+            className={`p-1.5 rounded-full transition-colors cursor-pointer shrink-0 ${
+              activeTextBox.font === "hand"
+                ? "bg-[#A85D44] text-white shadow-xs"
+                : "text-[#757069] dark:text-[#948F86] hover:bg-[#EFEBE3] dark:hover:bg-[#2B2A27]"
+            }`}
+            title="Handwriting"
+            aria-label="Handwriting"
+          >
+            <PenLine className="w-3.5 h-3.5" />
+          </button>
+
           {/* Bold toggle */}
           <button
             type="button"
@@ -340,7 +363,10 @@ export function AnnotationToolbar({
                 <button
                   key={sz}
                   type="button"
-                  onClick={() => onUpdateActiveTextBox?.({ fontSize: sz })}
+                  onClick={() => {
+                    onUpdateActiveTextBox?.({ fontSize: sz });
+                    saveTextStyle({ fontSize: sz });
+                  }}
                   className={`px-2 py-0.5 rounded-md font-mono text-[11px] transition-colors cursor-pointer ${
                     isSelected
                       ? "bg-[#2563EB] text-white font-semibold"
@@ -366,6 +392,7 @@ export function AnnotationToolbar({
                   type="button"
                   onClick={() => {
                     onUpdateActiveTextBox?.({ color: c.value });
+                    saveTextStyle({ color: c.value });
                     onSelectColor(c.value);
                   }}
                   title={c.label}
@@ -698,6 +725,7 @@ export function AnnotationToolbar({
                 key={c.value}
                 type="button"
                 onClick={() => {
+                  if (tool === "text") saveTextStyle({ color: c.value });
                   onSelectColor(c.value);
                   if (tool === null) {
                     onSelectTool("pen");

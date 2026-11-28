@@ -35,6 +35,9 @@ export interface Module {
 
 export interface Note {
   id: string;
+  /** Set on notes created by saving a suggestion as a separate copy. */
+  forked_from_note_id?: string | null;
+  forked_from_revision_id?: string | null;
   course_id: string;
   module_id?: string;
   slug: string;
@@ -96,6 +99,8 @@ export interface NoteBlock {
 
 export interface Revision {
   id: string;
+  /** Published versions are numbered 1, 2, 3… per note; null for unpublished rows. */
+  version_number?: number | null;
   note_id: string;
   author_id: string;
   base_revision_id?: string | null;
